@@ -1,50 +1,95 @@
-"""Điểm vào: python main.py (console) hoặc python main.py --gui (Tkinter)."""
-
-import argparse
-
-from config import DEFAULT_STATUS
+from config import DEFAULT_STATUS, PORT_DEFAULT
 from models.peer import LocalProfile
+from network.udp.discovery_service import DiscoveryService
 
 
-def main():
-    """Đọc tùy chọn CLI/hồ sơ và chạy chat TCP + UDP.
-
-    Đầu vào: Không có tham số Python; nhận --gui/--username/--port/--name/--job.
-    Trả về: None sau khi đóng chương trình. Lỗi hồ sơ/cổng được in ra console.
+def show_peers(discovery: DiscoveryService)  -> None:
     """
-    parser = argparse.ArgumentParser(description="LAN Chat UDP discovery + TCP chat")
-    parser.add_argument("--gui", action="store_true", help="Mở giao diện Tkinter")
-    parser.add_argument("--username")
-    parser.add_argument("--name")
-    parser.add_argument("--job")
-    parser.add_argument("--port", type=int)
-    args = parser.parse_args()
-    if args.gui:
-        from ui.app import main as gui_main
-        gui_main()
+    Hiển thị danh sách peer đã phát hiện.
+
+    Tham số:
+        discovery (DiscoveryService):
+            Service đang quản lý UDP Discovery.
+
+    Trả về:
+        None.
+
+    Chức năng:
+        1. Lấy danh sách peer từ DiscoveryService.
+        2. Kiểm tra danh sách có rỗng không.
+        3. In thông tin từng peer.
+
+    Lưu ý:
+        Hàm này chỉ hiển thị dữ liệu.
+        Nó không trực tiếp nhận gói UDP.
+    """
+
+    peers = discovery.list_peers()
+
+    if not peers: 
+        print("Chưa phát hiện người dùng nào. ")
         return
+
+    print("\n===== DANH SÁCH NGƯỜI DÙNG ====")
+
+    for peer in peers:
+        print(
+            f"Username: {peer.username} | "
+            f"Tên: {peer.display_name} | "
+            f"IP: {peer.ip} | "
+            f"TCP Port: {peer.tcp_port} | "
+            f"Status: {peer.status}"
+        )
+
+
+def main() -> None:
+    """
+    Hàm khởi động chương trình LAN Chat.
+
+    Tham số:
+        Không có.
+
+    Trả về:
+        None.
+
+    Chức năng:
+        1. Nhận thông tin người dùng từ bàn phím.
+        2. Tạo đối tượng LocalProfile.
+        3. Hiển thị thông tin người dùng.
+
+    Lưu ý:
+        Chưa khởi động UDPBroadcaster hoặc UDPListener.
+        Các thành phần UDP được chạy thử riêng.
+    """
+
     print("===== LAN CHAT P2P =====")
 
-    username = (args.username if args.username is not None else input("Nhập username: ")).strip()
-
-    display_name = (args.name if args.name is not None else input("Nhập tên hiển thị: ")).strip()
-
-    job_title = (args.job if args.job is not None else input("Nhập chức danh: ")).strip()
+    # Bước 1: Nhập thông tin của người dùng.
+    username = input("Nhập username: ").strip()
+    display_name = input("Nhập tên hiển thị: ").strip()
+    job_title = input("Nhập chức danh: ").strip()
 
     try:
-        test_port = args.port if args.port is not None else int(input("Nhập tcp_port: ").strip())
-        if not username or len(username) > 128:
-            raise ValueError("Username phải có 1..128 ký tự")
-        profile = LocalProfile(
-            username=username,
-            display_name=display_name or username,
-            job_title=job_title or "Nhân viên",
-            tcp_port=test_port,
-            status=DEFAULT_STATUS
-        )
+        test_tcp_port = int(input("Nhập port test: ").strip())
     except ValueError:
-        print("Hồ sơ không hợp lệ: kiểm tra username, trạng thái và TCP port (1..65535).")
+        print("TCP port phải là số nguyên.")
         return
+    if not 1 <= test_tcp_port <= 65535:
+        print("TCP port phải nằm trong khoảng 1-65535.")
+        return
+    # Không cho phép username rỗng.
+    if not username:
+        print("Username không được để trống!")
+        return
+
+    # Bước 2: Tạo đối tượng lưu thông tin bản thân.
+    profile = LocalProfile(
+        username=username,
+        display_name=display_name or username,
+        job_title=job_title or "Nhân viên",
+        tcp_port=test_tcp_port,
+        status=DEFAULT_STATUS
+    )
 
     print("\n===== THÔNG TIN NGƯỜI DÙNG =====")
     print(f"Username: {profile.username}")
@@ -52,12 +97,62 @@ def main():
     print(f"Chức danh: {profile.job_title}")
     print(f"TCP Port: {profile.tcp_port}")
     print(f"Trạng thái: {profile.status}")
-    from ui.console import Console
-    try:
-        Console(profile).run()
-    except (OSError, RuntimeError) as error:
-        print(f"Không thể khởi động LAN Chat: {error}")
 
+    #Bước 3: Tạo DiscoveryService.
+    #Constructor chỉ khởi tạo các thành phần UDP
+    discovery = DiscoveryService(profile)
+
+     #Bước 4: Khời động UDP
+    discovery.start()
+
+    print("\nUDP Discovery đã khởi động.")
+    print("Các lệnh: /list, /status online, ""/status away, /quit")
+
+    try:
+          # BƯỚC 5: Vòng lặp nhận lệnh.
+        while True:
+            command = input("\n> ").strip()
+
+            if command == "/list":
+                show_peers(discovery)
+
+            elif command.startswith("/status "):
+                new_status = command.split(
+                    maxsplit=1
+                )[1]
+
+                try:
+                    discovery.set_status(new_status)
+
+                    print(
+                        f"Đã đổi trạng thái: {new_status}"
+                    )
+
+                except ValueError:
+                    print(
+                        "Trạng thái chỉ được là "
+                        "online hoặc away."
+                    )
+
+            elif command == "/quit":
+                print("Đang thoát chương trình...")
+                break
+
+            elif not command:
+                continue
+
+            else:
+                print("Lệnh không hợp lệ.")
+
+    except (KeyboardInterrupt, EOFError):
+        print("\nĐang thoát chương trình...")
+
+    finally:
+        # BƯỚC 6: Luôn dừng UDP khi thoát.
+        discovery.stop()
+
+        print("Đã dừng UDP Discovery.")
+    
 
 if __name__ == "__main__":
     main()
