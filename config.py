@@ -11,4 +11,4 @@ PEER_TIMEOUT = 10
 DEFAULT_STATUS = "away"
 
 #g Gán cổng port tcp cho máy (dùng để test)
-PORT_DEFAULT = 5001  # Cổng thử nghiệm. bind(port=0) có thể xin cổng trống, nhưng LocalProfile hiện yêu cầu 1..65535.
+PORT_DEFAULT = 0  # Cổng thử nghiệm. bind(port=0) có thể xin cổng trống, nhưng LocalProfile hiện yêu cầu 1..65535.

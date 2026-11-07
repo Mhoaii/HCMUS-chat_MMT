@@ -1,5 +1,5 @@
 """Simple two-way TCP chat between one server and one client."""
-
+# python network\tcp\tcp_chat.py server
 import argparse
 import socket
 import threading

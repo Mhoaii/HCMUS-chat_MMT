@@ -1,35 +1,30 @@
 from config import DEFAULT_STATUS, PORT_DEFAULT
 from models.peer import LocalProfile
 from network.udp.discovery_service import DiscoveryService
-
-
+import socket
+from network.tcp.tcp_service import TCPChatService
+from network.tcp.tcp_chat import chat, run_client
 def show_peers(discovery: DiscoveryService)  -> None:
     """
     Hiển thị danh sách peer đã phát hiện.
-
     Tham số:
         discovery (DiscoveryService):
             Service đang quản lý UDP Discovery.
-
     Trả về:
         None.
-
     Chức năng:
         1. Lấy danh sách peer từ DiscoveryService.
         2. Kiểm tra danh sách có rỗng không.
         3. In thông tin từng peer.
-
     Lưu ý:
         Hàm này chỉ hiển thị dữ liệu.
         Nó không trực tiếp nhận gói UDP.
     """
 
     peers = discovery.list_peers()
-
     if not peers: 
         print("Chưa phát hiện người dùng nào. ")
         return
-
     print("\n===== DANH SÁCH NGƯỜI DÙNG ====")
 
     for peer in peers:
@@ -45,13 +40,10 @@ def show_peers(discovery: DiscoveryService)  -> None:
 def main() -> None:
     """
     Hàm khởi động chương trình LAN Chat.
-
     Tham số:
         Không có.
-
     Trả về:
         None.
-
     Chức năng:
         1. Nhận thông tin người dùng từ bàn phím.
         2. Tạo đối tượng LocalProfile.
@@ -68,26 +60,16 @@ def main() -> None:
     username = input("Nhập username: ").strip()
     display_name = input("Nhập tên hiển thị: ").strip()
     job_title = input("Nhập chức danh: ").strip()
-
-    try:
-        test_tcp_port = int(input("Nhập port test: ").strip())
-    except ValueError:
-        print("TCP port phải là số nguyên.")
-        return
-    if not 1 <= test_tcp_port <= 65535:
-        print("TCP port phải nằm trong khoảng 1-65535.")
-        return
-    # Không cho phép username rỗng.
-    if not username:
-        print("Username không được để trống!")
-        return
+    tcp = TCPChatService()
+    actual_port = tcp.start(PORT_DEFAULT)
+    
 
     # Bước 2: Tạo đối tượng lưu thông tin bản thân.
     profile = LocalProfile(
         username=username,
         display_name=display_name or username,
         job_title=job_title or "Nhân viên",
-        tcp_port=test_tcp_port,
+        tcp_port=actual_port,
         status=DEFAULT_STATUS
     )
 
@@ -106,7 +88,7 @@ def main() -> None:
     discovery.start()
 
     print("\nUDP Discovery đã khởi động.")
-    print("Các lệnh: /list, /status online, ""/status away, /quit")
+    print("Các lệnh: /list, /status online, ""/status away, /quit, ""/accept, /chat + username")
 
     try:
           # BƯỚC 5: Vòng lặp nhận lệnh.
@@ -115,6 +97,23 @@ def main() -> None:
 
             if command == "/list":
                 show_peers(discovery)
+
+            elif command == "/accept": 
+                print ("Đang chờ người kết nối TCP...")
+                connection, address = tcp.accept()
+                print(f"Đã kết nối với {address[0]}:{address[1]}")
+                chat(connection)
+
+            elif command.startswith("/chat "):
+                username = command.split(maxsplit=1)[1]
+                peer = discovery.get_peer(username)
+                if peer is None:
+                    print("Chưa tìm thấy người dùng này trong LAN.")
+                else:
+                    try:
+                        run_client(peer.ip, peer.tcp_port)
+                    except OSError as error:
+                        print(f"Không thể kết nối: {error}")
 
             elif command.startswith("/status "):
                 new_status = command.split(
@@ -133,7 +132,6 @@ def main() -> None:
                         "Trạng thái chỉ được là "
                         "online hoặc away."
                     )
-
             elif command == "/quit":
                 print("Đang thoát chương trình...")
                 break
