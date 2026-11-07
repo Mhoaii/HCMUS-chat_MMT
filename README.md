@@ -1,3 +1,21 @@
+# LAN Chat — UDP discovery và TCP chat
+
+Đã nối chat text vào backend và giao diện. Hướng dẫn chi tiết: [TCP_CHAT.md](TCP_CHAT.md).
+
+```powershell
+python main.py --gui
+# Hoặc console, mỗi instance dùng username và TCP port riêng:
+python main.py --username nnah --name nnah --job Test --port 5001
+python main.py --username oithoinao --name oithoinao --job Test --port 6000
+```
+
+Console: chờ discovery, `/list`, `/chat username`, nhập tin để gửi, `/quit` để thoát.
+Chạy `python -m ui --demo` nếu chỉ muốn xem UI mẫu không có mạng.
+Chat hiện cần hai peer cùng chạy; ACK là ứng dụng bên kia đã nhận, chưa phải đã xem.
+Truyền file thật và lưu lịch sử xuống đĩa chưa được triển khai.
+
+Kiểm thử: `python -B -m unittest discover -s tests -v`.
+
 <!-- Khi nhận được thông tin của Minh, chương trình sẽ lưu ở đâu? Làm sao biết Minh là người mới, đã tồn tại, hay đã offline? Và người làm TCP sẽ lấy thông tin của Minh bằng cách nào? -->
 
 <!-- 

@@ -2,7 +2,7 @@
 
 import argparse
 
-from config import DEFAULT_STATUS, PORT_DEFAULT
+from config import DEFAULT_STATUS
 from models.peer import LocalProfile
 
 

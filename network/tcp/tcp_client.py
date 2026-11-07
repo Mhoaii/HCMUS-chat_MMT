@@ -1,6 +1,4 @@
 """Phía chủ động kết nối TCP; mỗi lần gửi sử dụng một kết nối riêng."""
-import socket
-
 from network.tcp.protocol import receive_packet, send_packet
 
 

@@ -243,6 +243,23 @@ class TestTCPIntegration(unittest.TestCase):
             probe.settimeout(0.5)
             self.assertNotEqual(probe.connect_ex(address), 0)
 
+    def test_send_failure_never_reports_success_ack(self):
+        """Không có đầu vào; cổng bị đóng phải báo lỗi gửi, không báo ACK thành công; trả None."""
+        self.backends[1].close()
+        self.backends[0].send_message("b", "Cannot deliver", "failure-id")
+        event = self.wait_event(0, "ack", "failure-id")
+        self.assertEqual(event["status"], "Lỗi gửi / chưa có ACK")
+
+    def test_invalid_connection_does_not_stop_server(self):
+        """Không có đầu vào; một frame sai không làm dừng listener hay kết nối tiếp; trả None."""
+        address = ("127.0.0.1", self.backends[1].profile.tcp_port)
+        with socket.create_connection(address, timeout=2) as connection:
+            connection.sendall(struct.pack("!I", 0))
+            self.assertEqual(connection.recv(1), b'')
+        self.backends[0].send_message("b", "Still works", "after-invalid")
+        self.assertEqual(self.wait_event(1, "message", "after-invalid")["text"], "Still works")
+        self.assertEqual(self.wait_event(0, "ack", "after-invalid")["status"], "Đã nhận ACK")
+
 
 if __name__ == "__main__":
     unittest.main()
