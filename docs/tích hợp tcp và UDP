@@ -1,0 +1,7 @@
+Quy trình khởi động chính xác sẽ là:
+1. Người dùng nhập hồ sơ.
+2. TCP server khởi động và xác định port thực sự đang lắng nghe.
+3. Tạo LocalProfile với port đó.
+4. Khởi động DiscoveryService để quảng bá đúng TCP port.
+5. Người dùng dùng /list, /chat <username>, /quit.
+6. Khi thoát, dừng cả UDP lẫn TCP.
