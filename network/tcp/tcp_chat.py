@@ -5,7 +5,7 @@ import socket
 import threading
 
 
-def receive_messages(connection: socket.socket) -> None:
+def receive_messages(connection: socket.socket) -> None:  #	Nhận dữ liệu từ socket, tách tin nhắn bằng \n
     buffer = b""
     while True:
         try:
@@ -25,7 +25,7 @@ def receive_messages(connection: socket.socket) -> None:
     print("\nPeer disconnected.")
 
 
-def chat(connection: socket.socket) -> None:
+def chat(connection: socket.socket) -> None:  #Vừa nhập tin nhắn, vừa nhận tin nhắn bằng thread
     print("Connected. Type /quit to leave.")
     receiver = threading.Thread(target=receive_messages, args=(connection,), daemon=True)
     receiver.start()
@@ -45,7 +45,7 @@ def chat(connection: socket.socket) -> None:
         connection.close()
 
 
-def run_server(host: str, port: int) -> None:
+def run_server(host: str, port: int) -> None:  #Mở TCP server và chờ một client kết nối
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((host, port))
@@ -56,14 +56,14 @@ def run_server(host: str, port: int) -> None:
         chat(connection)
 
 
-def run_client(host: str, port: int) -> None:
+def run_client(host: str, port: int) -> None:  #Kết nối đến server qua IP và port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
         connection.connect((host, port))
         print(f"Connected to {host}:{port}")
         chat(connection)
 
 
-def main() -> None:
+def main() -> None:  #Cho phép chọn vai trò server/client bằng argparse
     parser = argparse.ArgumentParser(description="Chat with another computer over TCP.")
     subparsers = parser.add_subparsers(dest="role", required=True)
 
