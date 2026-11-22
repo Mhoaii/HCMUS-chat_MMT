@@ -5,7 +5,7 @@ from tkinter.scrolledtext import ScrolledText
 from config import DEFAULT_STATUS, PORT_DEFAULT
 from models.peer import LocalProfile
 from network.tcp.tcp_service import TCPChatService
-from network.udp.discovery_service import DiscoveryService
+from network.udp import DiscoveryService
 class ChatWindow:
     "quản lý cửa sổ và các thao tác"
     

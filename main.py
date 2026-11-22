@@ -1,6 +1,6 @@
 from config import DEFAULT_STATUS, PORT_DEFAULT
 from models.peer import LocalProfile
-from network.udp.discovery_service import DiscoveryService
+from network.udp import DiscoveryService
 import socket
 from network.tcp.tcp_service import TCPChatService
 from network.tcp.tcp_chat import chat, run_client
