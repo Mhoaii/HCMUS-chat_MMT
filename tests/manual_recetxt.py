@@ -2,18 +2,11 @@
 import socket
 
 from config import UDP_PORT
-from network.udp.presence_protocol import PresenceProtocol
+from network.udp.components.presence_protocol import PresenceProtocol
 
 
 def main():
-    """Mở socket để xem các gói presence nhận được trong terminal.
-
-    Đầu vào: Không có tham số; nhận UDP datagram tại UDP_PORT.
-    Trả về: None khi thoát vòng nhận do ngoại lệ; socket luôn đóng ở finally.
-    Bỏ gói decode không hợp lệ, in IP nguồn và thông tin gói hợp lệ.
-    Vòng lặp không có lệnh thoát riêng; có thể ngắt bằng Ctrl+C.
-    Đây là kiểm thử thủ công, không tự được unittest discover chạy.
-    """
+    """Nhận và in presence hợp lệ; bỏ gói lỗi, đóng socket khi ngắt bằng Ctrl+C."""
     sock = socket.socket(
         socket.AF_INET,
         socket.SOCK_DGRAM

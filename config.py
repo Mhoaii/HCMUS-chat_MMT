@@ -1,6 +1,7 @@
 #UDP port dùng chung cho các peer trong mạng Lan
 UDP_PORT = 1717
 BROADCAST_IP = "255.255.255.255"
+
 # time giữa các lần gửi
 PRESENCE_INTERVAL = 3
 

@@ -17,6 +17,7 @@ PORT = 9999
 
 
 def make_socket():
+    """Tạo và trả socket UDP cho phép broadcast và dùng chung cổng PORT."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # Allow several processes to bind the same UDP port (must be BEFORE bind)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -31,6 +32,7 @@ def make_socket():
 
 
 def listen(name):
+    """Nhận và in broadcast, bỏ gói HELLO của chính name; chạy tới khi bị ngắt."""
     s = make_socket()
     print(f"[{name}] listening on UDP {PORT} ...")
     while True:
@@ -43,6 +45,7 @@ def listen(name):
 
 
 def send(name, bcast, tcp_port):
+    """Phát HELLO chứa name và tcp_port tới bcast mỗi 3 giây."""
     s = make_socket()
     msg = f"HELLO|{name}|{tcp_port}|online".encode()
     print(f"[{name}] broadcasting to {bcast}:{PORT} every 3 s (Ctrl+C to stop)")

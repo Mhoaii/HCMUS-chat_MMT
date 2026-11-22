@@ -1,19 +1,12 @@
 import unittest
 
 from models.peer import LocalProfile
-from network.udp.presence_protocol import PresenceProtocol
+from network.udp.components.presence_protocol import PresenceProtocol
 
 class TestPresenceProtocol(unittest.TestCase):
-    """Nhóm kiểm thử định dạng presence, kế thừa unittest.TestCase.
-
-    Sử dụng các hàm assert do lớp cha cung cấp để kiểm tra kết quả và ngoại lệ.
-    """
+    """Kiểm thử chuyển đổi và kiểm tra gói presence."""
     def test_encode_decode(self):
-        """Kiểm tra hồ sơ được encode thành bytes và decode giữ các trường đã chọn.
-
-        Đầu vào: Chỉ self; tạo LocalProfile mẫu bên trong bài test.
-        Trả về: None; assertion thất bại sẽ làm unittest báo test không đạt.
-        """
+        """Kiểm tra encode/decode giữ đúng thông tin hồ sơ và tiếng Việt."""
         profile = LocalProfile(
             username="hoang",
             display_name="Anh Hoàng",
@@ -35,11 +28,7 @@ class TestPresenceProtocol(unittest.TestCase):
         self.assertEqual(message["status"], "away")
 
     def test_invalid_packet(self):
-        """Kiểm tra dữ liệu không phải JSON bị decode từ chối bằng ValueError.
-
-        Đầu vào: Chỉ self; dữ liệu thử là bytes b"not json".
-        Trả về: None; unittest báo lỗi nếu ngoại lệ mong đợi không xuất hiện.
-        """
+        """Kiểm tra decode báo ValueError khi dữ liệu không phải JSON."""
         with self.assertRaises(ValueError):
             PresenceProtocol.decode(b"not json")
 

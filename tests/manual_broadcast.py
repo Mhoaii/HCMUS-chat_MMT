@@ -1,15 +1,10 @@
 
 from models.peer import LocalProfile
-from network.udp.broadcaster import UDPBroadcaster
+from network.udp.components.udp_broadcaster import UDPBroadcaster
 
 
 def main():
-    """Chạy thử bộ phát UDP bằng một hồ sơ cố định.
-
-    Đầu vào: Không có tham số; chờ người dùng nhấn Enter qua input().
-    Trả về: None sau khi dừng broadcaster trong finally.
-    Đây là kiểm thử thủ công có phát dữ liệu mạng thật, không phải unit test.
-    """
+    """Phát presence mẫu qua mạng thật; nhấn Enter để dừng và dọn broadcaster."""
     profile = LocalProfile(
         username="hoang",
         display_name="Anh Hoàng",
