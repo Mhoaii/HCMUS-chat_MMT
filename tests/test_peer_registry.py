@@ -1,7 +1,7 @@
 
 import unittest
 
-from network.udp.components.peer_registry import PeerRegistry
+from network.udp.peer_registry import PeerRegistry
 
 
 class TestPeerRegistry(unittest.TestCase):

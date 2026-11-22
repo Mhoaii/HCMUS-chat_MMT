@@ -1,9 +1,9 @@
 import threading
 
 from models.peer import LocalProfile, Peer
-from .components.udp_listener import UDPListener
-from .components.peer_registry import PeerRegistry
-from .components.udp_broadcaster import UDPBroadcaster
+from network.udp.listener import UDPListener
+from network.udp.peer_registry import PeerRegistry
+from network.udp.broadcaster import UDPBroadcaster
 
 class DiscoveryService:
     """Điều phối UDP listener, broadcaster và việc loại peer hết hạn."""

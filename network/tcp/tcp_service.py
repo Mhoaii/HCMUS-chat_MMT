@@ -42,10 +42,13 @@ class TCPChatService:
             self._listener.close()
             self._listener = None
     
-    def accept(self):
-        """Chờ và trả (socket kết nối, địa chỉ peer); chặn tới khi có kết nối.
-        Báo RuntimeError nếu listener chưa khởi động."""
-        if self._listener is None:
+    def accept(self, timeout: float | None = None):
+        """Trả (socket, địa chỉ); timeout=None chờ vô hạn như bản console.
+        Báo socket.timeout khi quá hạn, RuntimeError nếu chưa khởi động."""
+        listener = self._listener
+        if listener is None:
             raise RuntimeError("TCP listener chưa khởi động.")
-        return self._listener.accept()
-            
+        # GUI dùng timeout ngắn để vòng accept có thể kiểm tra yêu cầu dừng.
+        # Mặc định None giữ cách chờ vô hạn của bản console.
+        listener.settimeout(timeout)
+        return listener.accept()

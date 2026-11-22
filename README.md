@@ -19,18 +19,16 @@ Kiểm thử: `python -B -m unittest discover -s tests -v`.
 ## Cấu trúc mô-đun discovery
 
 Thư mục `network/udp` chứa phần phát hiện peer bằng UDP.
-Bộ điều phối nằm ở cấp ngoài; các thành
-phần hỗ trợ được gom trong `components/` và dùng chung trong mô-đun discovery.
+Bộ điều phối và các thành phần hỗ trợ nằm trực tiếp trong thư mục này.
 
 ```text
 network/
 ├── udp/
-│   ├── discovery_service.py     # Điều phối start/stop, trạng thái và timeout
-│   └── components/
-│       ├── udp_broadcaster.py   # Phát presence định kỳ
-│       ├── udp_listener.py      # Nhận presence và cập nhật registry
-│       ├── presence_protocol.py # Mã hóa/kiểm tra HELLO JSON UTF-8
-│       └── peer_registry.py     # Lưu, tra cứu và loại peer hết hạn bằng Lock
+│   ├── discovery_service.py # Điều phối start/stop, trạng thái và timeout
+│   ├── broadcaster.py       # Phát presence định kỳ
+│   ├── listener.py          # Nhận presence và cập nhật registry
+│   ├── presence_protocol.py # Mã hóa/kiểm tra HELLO JSON UTF-8
+│   └── peer_registry.py     # Lưu, tra cứu và loại peer hết hạn bằng Lock
 └── tcp/
 ```
 
@@ -48,8 +46,7 @@ Service đọc registry qua `get_peer()`/`list_peers()` và định kỳ gọi
 Cách chia này áp dụng nguyên tắc một trách nhiệm (SRP) và kết hợp các đối
 tượng có sẵn. Không thêm lớp cơ sở hay kế thừa khi chưa có nhu cầu thay thế
 thành phần. API service và định dạng gói HELLO giữ nguyên. Import trực tiếp
-từ file mô-đun nên không cần `__init__.py`. `components` là phần hỗ trợ của
-discovery, không phải thư mục tiện ích chung cho toàn ứng dụng.
+từ file mô-đun nên không cần `__init__.py`.
 
 Chạy riêng các unit test hiện có của UDP:
 

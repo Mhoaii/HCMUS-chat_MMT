@@ -4,8 +4,8 @@ import logging
 
 from config import UDP_PORT
 from models.peer import LocalProfile
-from .peer_registry import PeerRegistry
-from .presence_protocol import PresenceProtocol
+from network.udp.peer_registry import PeerRegistry
+from network.udp.presence_protocol import PresenceProtocol
 
 
 logger = logging.getLogger(__name__)

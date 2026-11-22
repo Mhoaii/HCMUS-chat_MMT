@@ -1,7 +1,7 @@
 import unittest
 
 from models.peer import LocalProfile
-from network.udp.components.presence_protocol import PresenceProtocol
+from network.udp.presence_protocol import PresenceProtocol
 
 class TestPresenceProtocol(unittest.TestCase):
     """Kiểm thử chuyển đổi và kiểm tra gói presence."""

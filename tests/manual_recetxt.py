@@ -2,7 +2,7 @@
 import socket
 
 from config import UDP_PORT
-from network.udp.components.presence_protocol import PresenceProtocol
+from network.udp.presence_protocol import PresenceProtocol
 
 
 def main():

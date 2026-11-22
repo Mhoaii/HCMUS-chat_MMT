@@ -12,7 +12,7 @@ from models.peer import LocalProfile
 from network.tcp.protocol import encode_packet, receive_packet, send_packet
 from network.tcp.tcp_client import TCPClient
 from network.tcp.tcp_server import TCPServer
-from network.udp.components.peer_registry import PeerRegistry
+from network.udp.peer_registry import PeerRegistry
 
 
 def packet(sender="a", recipient="b", message_id="id-1", text="Xin chào 👋\nDòng hai"):

@@ -1,6 +1,6 @@
 
 from models.peer import LocalProfile
-from network.udp.components.udp_broadcaster import UDPBroadcaster
+from network.udp.broadcaster import UDPBroadcaster
 
 
 def main():

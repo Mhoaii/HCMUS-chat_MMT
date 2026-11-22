@@ -8,7 +8,7 @@ from config import(
 )
 
 from models.peer import LocalProfile
-from .presence_protocol import PresenceProtocol
+from network.udp.presence_protocol import PresenceProtocol
 
 class UDPBroadcaster:
     """Phát hồ sơ qua UDP broadcast định kỳ bằng thread nền."""
