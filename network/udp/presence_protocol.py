@@ -1,39 +1,11 @@
-
-# Bây giờ chúng ta muốn máy Hoàng thông báo cho các máy khác rằng:
-# Tôi là Hoàng, đang chạy chương trình, sử dụng TCP port 5001 và có trạng thái away.
-
-# Vấn đề là UDP socket không thể gửi trực tiếp một đối tượng LocalProfile.
-
-# Hàm socket.sendto() yêu cầu dữ liệu dạng bytes.
-# LocalProfile ->
-# Đối tượng Python chứa thông tin Hoàng ->
-# Encode — Mã hóa dữ liệu ->
-# Bytes ->
-# Dữ liệu có thể đưa vào UDP datagram ->
-# UDP Socket → Máy Minh ->
-# Decode — Giải mã dữ liệu ->
-# Dictionary chứa thông tin Hoàng
-
-
 import json
 from models.peer import LocalProfile
 
 class PresenceProtocol:
-    """Quy định cách chuyển hồ sơ thành gói HELLO JSON UTF-8 và đọc ngược lại.
-
-    Không giữ trạng thái; hai staticmethod được gọi trực tiếp qua tên lớp.
-    Broadcaster/listener sử dụng lớp này, không kế thừa nó.
-    Encode/decode ở đây là chuyển định dạng, không phải mã hóa bảo mật.
-    """
-    @staticmethod #encode
+    """Chuyển đổi giữa hồ sơ và gói HELLO JSON UTF-8."""
+    @staticmethod
     def encode(profile: LocalProfile) -> bytes: 
-        """Chuyển LocalProfile thành bytes để socket.sendto() có thể gửi.
-
-        Đầu vào: profile (LocalProfile), chứa thông tin của máy gửi.
-        Trả về: bytes chứa JSON UTF-8 với type="HELLO", username, display_name,
-        job_title, tcp_port và status. ensure_ascii=False giữ chữ có dấu trong JSON.
-        Không tự kiểm tra toàn bộ hồ sơ và không tự gửi gói tin.
-        """
+        """Chuyển LocalProfile thành bytes JSON UTF-8 để gửi qua UDP."""
         message = {
             "type" : "HELLO", #dùng để chào hỏi
             "username" : profile.username,
@@ -43,41 +15,15 @@ class PresenceProtocol:
             "status": profile.status
         }
 
-#     json.dumps(message)
-#    Chuyển dictionary Python thành chuỗi JSON.ensure_ascii=False
-
-#    Giúp giữ nguyên chữ tiếng Việt trong chuỗi JSON, chẳng hạn Anh Hoàng, thay vì chuyển ký tự có dấu thành dạng Unicode escape.
-
-#    .encode("utf-8")
-
-#   Chuyển str thành bytes.
-
-#   Đây là phần quan trọng vì UDP socket sẽ gửi bytes, không gửi trực tiếp dictionary.
+        # UDP gửi bytes; JSON được chuyển sang UTF-8.
         return json.dumps(message, ensure_ascii=False).encode("utf-8")
 
 
     
-# bytes
-#   ↓
-# decode UTF-8
-#   ↓
-# JSON string
-#   ↓
-# json.loads()
-#   ↓
-# Dictionary
     @staticmethod
     def decode(data: bytes) -> dict: 
-        """Giải mã và kiểm tra cấu trúc một UDP presence packet.
-
-        Đầu vào: data (bytes), phần dữ liệu lấy từ socket.recvfrom().
-        Trả về: dict hợp lệ với type="HELLO", các trường chuỗi, username không
-        trắng, tcp_port là int 1..65535 và status là "online" hoặc "away".
-        Ngoại lệ: ValueError khi UTF-8, JSON hoặc các trường bắt buộc không hợp lệ.
-        Luồng xử lý: bytes -> chuỗi UTF-8 -> đối tượng JSON -> kiểm tra -> dict.
-        Không tạo Peer, không xác thực danh tính, không cập nhật PeerRegistry.
-        strip() chỉ kiểm tra username rỗng; không sửa username trong kết quả.
-        """
+        """Đọc bytes UTF-8 và trả dict HELLO đã kiểm tra các trường bắt buộc.
+        Báo ValueError nếu dữ liệu, cổng TCP hoặc trạng thái không hợp lệ."""
         try:
             message = json.loads(
                 data.decode("utf-8")

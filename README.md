@@ -16,6 +16,45 @@ Truyền file thật và lưu lịch sử xuống đĩa chưa được triển k
 
 Kiểm thử: `python -B -m unittest discover -s tests -v`.
 
+## Cấu trúc mô-đun discovery
+
+Thư mục `network/udp` chứa phần phát hiện peer bằng UDP.
+Bộ điều phối và các thành phần hỗ trợ nằm trực tiếp trong thư mục này.
+
+```text
+network/
+├── udp/
+│   ├── discovery_service.py # Điều phối start/stop, trạng thái và timeout
+│   ├── broadcaster.py       # Phát presence định kỳ
+│   ├── listener.py          # Nhận presence và cập nhật registry
+│   ├── presence_protocol.py # Mã hóa/kiểm tra HELLO JSON UTF-8
+│   └── peer_registry.py     # Lưu, tra cứu và loại peer hết hạn bằng Lock
+└── tcp/
+```
+
+Console và giao diện chỉ cần import service:
+
+```python
+from network.udp.discovery_service import DiscoveryService
+```
+
+Luồng gửi: `DiscoveryService → UDPBroadcaster → PresenceProtocol → UDP`.
+Luồng nhận: `UDP → UDPListener → PresenceProtocol → PeerRegistry`.
+Service đọc registry qua `get_peer()`/`list_peers()` và định kỳ gọi
+`remove_expired_peers()` để loại peer hết hạn.
+
+Cách chia này áp dụng nguyên tắc một trách nhiệm (SRP) và kết hợp các đối
+tượng có sẵn. Không thêm lớp cơ sở hay kế thừa khi chưa có nhu cầu thay thế
+thành phần. API service và định dạng gói HELLO giữ nguyên. Import trực tiếp
+từ file mô-đun nên không cần `__init__.py`.
+
+Chạy riêng các unit test hiện có của UDP:
+
+```powershell
+python -X utf8 -B -m unittest discover -s tests -p test_presence_protocol.py -v
+python -X utf8 -B -m unittest discover -s tests -p test_peer_registry.py -v
+```
+
 <!-- Khi nhận được thông tin của Minh, chương trình sẽ lưu ở đâu? Làm sao biết Minh là người mới, đã tồn tại, hay đã offline? Và người làm TCP sẽ lấy thông tin của Minh bằng cách nào? -->
 
 <!-- 

@@ -1,28 +1,16 @@
 import socket
 
 class TCPChatService:
-    """Quản lý socket lắng nghe kết nối TCP của ứng dụng chat.
-
-    Đầu vào khi tạo: Không có.
-    Kết quả khi tạo: Đối tượng service ở trạng thái chưa mở listener.
-    Quy trình: start() mở và giữ socket, stop() đóng socket đã lưu.
-    Lưu ý: Thread điều phối gọi các phương thức vòng đời theo thứ tự.
-    """
+    """Mở, nhận kết nối và đóng listener TCP của ứng dụng."""
 
 
     def __init__(self) -> None:
+        """Khởi tạo service chưa có listener TCP."""
         self._listener: socket.socket | None = None #Gán _listener bằng None để biểu thị chưa mở socket.
 
     def start(self, port: int) -> int:
-        """Mở listener TCP IPv4 và lấy cổng hệ điều hành đã cấp.
-
-        Đầu vào: port (int), cổng cần mở từ 0 đến 65535.
-            Truyền 0 để hệ điều hành chọn cổng trống.
-        Trả về: int, số cổng TCP thực tế đang lắng nghe.
-        Quy trình: Tạo socket, bind, listen rồi lưu socket vào service.
-        Ngoại lệ: ValueError nếu cổng ngoài khoảng cho phép,
-            RuntimeError nếu service đã chạy, OSError nếu mở cổng thất bại.
-        """
+        """Mở listener và trả cổng TCP thực tế; port=0 để hệ điều hành chọn.
+        Báo RuntimeError nếu đã chạy; đóng socket và báo lại lỗi nếu mở thất bại."""
 
         if self._listener is not None: 
             raise RuntimeError("TCP listener đã được khởi động.")
@@ -49,12 +37,18 @@ class TCPChatService:
     def stop(self):
 
 
+        """Đóng listener nếu đang mở và đặt lại trạng thái chưa chạy."""
         if self._listener is not None:
             self._listener.close()
             self._listener = None
     
-    def accept(self):
-        if self._listener is None:
+    def accept(self, timeout: float | None = None):
+        """Trả (socket, địa chỉ); timeout=None chờ vô hạn như bản console.
+        Báo socket.timeout khi quá hạn, RuntimeError nếu chưa khởi động."""
+        listener = self._listener
+        if listener is None:
             raise RuntimeError("TCP listener chưa khởi động.")
-        return self._listener.accept()
-            
+        # GUI dùng timeout ngắn để vòng accept có thể kiểm tra yêu cầu dừng.
+        # Mặc định None giữ cách chờ vô hạn của bản console.
+        listener.settimeout(timeout)
+        return listener.accept()

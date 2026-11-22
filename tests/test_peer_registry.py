@@ -6,17 +6,9 @@ from network.udp.peer_registry import PeerRegistry
 
 class TestPeerRegistry(unittest.TestCase):
 
-    """Nhóm kiểm thử PeerRegistry, kế thừa unittest.TestCase.
-
-    TestCase cung cấp assertEqual/assertTrue và cơ chế chạy setUp trước mỗi test.
-    Các bài test truyền now giả lập nên không cần chờ timeout ngoài đời thật.
-    """
+    """Kiểm thử thêm, cập nhật và hết hạn peer bằng thời gian giả lập."""
     def setUp(self):
-        """Chuẩn bị registry rỗng và gói HELLO mẫu trước mỗi bài test.
-
-        Đầu vào: Chỉ self do unittest cung cấp.
-        Trả về: None; lưu dữ liệu vào self.registry và self.message.
-        """
+        """Tạo registry rỗng và gói HELLO mẫu trước mỗi test."""
         self.registry = PeerRegistry()
 
         self.message = {
@@ -29,11 +21,7 @@ class TestPeerRegistry(unittest.TestCase):
         }
 
     def test_add_peer(self):
-        """Kiểm tra thêm peer lần đầu trả True và lưu đúng IP/TCP port.
-
-        Đầu vào: Chỉ self với dữ liệu đã được setUp chuẩn bị.
-        Trả về: None; assertion thất bại sẽ làm unittest báo test không đạt.
-        """
+        """Kiểm tra peer mới trả True và lưu đúng IP/cổng TCP."""
         is_new = self.registry.upsert_peer(
             self.message,
             "192.168.1.11",
@@ -49,11 +37,7 @@ class TestPeerRegistry(unittest.TestCase):
         self.assertEqual(peer.tcp_port, 5002)
 
     def test_update_peer(self):
-        """Kiểm tra peer cũ được cập nhật status/last_seen và trả False.
-
-        Đầu vào: Chỉ self với dữ liệu từ setUp.
-        Trả về: None; assertion thất bại sẽ làm unittest báo test không đạt.
-        """
+        """Kiểm tra peer cũ trả False và cập nhật status/last_seen."""
         self.registry.upsert_peer(
             self.message,
             "192.168.1.11",
@@ -77,11 +61,7 @@ class TestPeerRegistry(unittest.TestCase):
         self.assertEqual(peer.last_seen, 105)
 
     def test_timeout(self):
-        """Kiểm tra peer còn tồn tại trước hạn và bị xóa đúng mốc timeout.
-
-        Đầu vào: Chỉ self; các mốc now được giả lập ngay trong bài test.
-        Trả về: None; assertion thất bại sẽ làm unittest báo test không đạt.
-        """
+        """Kiểm tra peer còn trước hạn và bị xóa đúng mốc timeout."""
         self.registry.upsert_peer(
             self.message,
             "192.168.1.11",

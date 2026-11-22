@@ -1,20 +1,3 @@
-# UDPListener
-# │
-# ├── Thuộc tính
-# │   ├── _profile
-# │   ├── _registry
-# │   ├── _socket
-# │   ├── _thread
-# │   ├── _stop_event
-# │   └── _on_peer_online
-# │
-# └── Phương thức
-#     ├── __init__()
-#     ├── start() v 
-#     ├── _run()
-#     └── stop()
-
-
 import socket
 import threading
 import logging
@@ -28,29 +11,14 @@ from network.udp.presence_protocol import PresenceProtocol
 logger = logging.getLogger(__name__)
 
 class UDPListener:
-    """Nhận UDP presence, bỏ gói lỗi/gói của mình và cập nhật danh sách peer.
-
-    Sử dụng LocalProfile, PeerRegistry và PresenceProtocol, không kế thừa chúng.
-    Giữ callback tùy chọn để báo peer mới; sở hữu socket, Thread và Event.
-    Luồng nhận riêng tránh để recvfrom() chặn luồng giao diện.
-    """
+    """Nhận presence ở thread nền, cập nhật registry và thông báo peer mới."""
     def __init__(self, profile: LocalProfile, registry: PeerRegistry, on_peer_online = None):
-        """Chuẩn bị bộ nhận UDP, chưa mở socket hay chạy thread.
-
-        Đầu vào:
-            profile (LocalProfile): Hồ sơ mình, dùng bỏ qua gói cùng username.
-            registry (PeerRegistry): Nơi dùng chung để thêm/cập nhật peer.
-            on_peer_online (callable | None): Hàm nhận username (str) khi thấy
-                peer mới; kết quả trả về của callback không được sử dụng.
-        Trả về: None. Callback sẽ chạy trong thread listener, không phải UI thread.
-        """
+        """Lưu hồ sơ, registry và callback tùy chọn; chưa mở socket.
+        on_peer_online(username) chạy trong thread nhận khi phát hiện peer mới."""
         self._profile = profile
         self._registry = registry
 
         self._on_peer_online = on_peer_online
-#         Đây là một hàm callback tùy chọn.
-# Khi phát hiện peer mới, listener có thể gọi callback này.
-
         self._socket = None
         self._thread = None
         self._stop_event = threading.Event()
@@ -58,14 +26,8 @@ class UDPListener:
 
 
     def start(self):
-        """Bind socket UDP trên mọi địa chỉ IPv4 và khởi động thread nhận.
-
-        Đầu vào: Không có tham số ngoài self.
-        Trả về: None; bỏ qua nếu thread đã chạy.
-        Ngoại lệ: OSError khi bind/settimeout thất bại, sau khi đóng socket lỗi.
-        Timeout 0.5 giây giúp vòng nhận định kỳ kiểm tra yêu cầu dừng.
-        Cổng bind là UDP_PORT trong config, không phải TCP port của hồ sơ.
-        """
+        """Bind cổng UDP discovery và chạy thread nhận; bỏ qua nếu đã chạy.
+        Báo OSError nếu mở socket thất bại; timeout nhận là 0.5 giây."""
         if self._thread is not None and self._thread.is_alive():
             return
 
@@ -95,15 +57,8 @@ class UDPListener:
         self._thread.start()
 
     def _run(self):
-        """Nhận, giải mã và đăng ký peer cho tới khi có yêu cầu dừng.
-
-        Đầu vào: Không có tham số ngoài self; sử dụng socket đã bind.
-        Trả về: None; khối finally đóng socket khi vòng lặp kết thúc.
-        recvfrom(4096) cung cấp bytes và (IP nguồn, cổng nguồn).
-        Bỏ gói không hợp lệ hoặc có username của mình; cập nhật registry bằng
-        IP nguồn thật. Chỉ gọi callback khi upsert_peer() trả True.
-        Lỗi callback chưa được bắt ở đây và có thể làm thread nhận kết thúc.
-        """
+        """Bỏ gói lỗi/gói của mình, cập nhật peer bằng IP nguồn rồi báo peer mới.
+        Luôn đóng socket khi kết thúc; lỗi callback có thể làm thread dừng."""
         try: 
             while not self._stop_event.is_set():
 
@@ -157,12 +112,7 @@ class UDPListener:
  
 
     def stop(self):
-        """Đặt cờ dừng và chờ thread nhận kết thúc, socket được đóng trong _run().
-
-        Đầu vào: Không có tham số ngoài self.
-        Trả về: None. Socket timeout giúp worker có cơ hội kiểm tra cờ dừng.
-        Gọi từ luồng điều phối, không gọi từ callback của chính listener.
-        """
+        """Báo dừng và chờ thread nhận đóng socket; gọi từ luồng điều phối."""
         self._stop_event.set()
 
         if self._thread is not None:

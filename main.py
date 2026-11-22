@@ -5,21 +5,7 @@ import socket
 from network.tcp.tcp_service import TCPChatService
 from network.tcp.tcp_chat import chat, run_client
 def show_peers(discovery: DiscoveryService)  -> None:
-    """
-    Hiển thị danh sách peer đã phát hiện.
-    Tham số:
-        discovery (DiscoveryService):
-            Service đang quản lý UDP Discovery.
-    Trả về:
-        None.
-    Chức năng:
-        1. Lấy danh sách peer từ DiscoveryService.
-        2. Kiểm tra danh sách có rỗng không.
-        3. In thông tin từng peer.
-    Lưu ý:
-        Hàm này chỉ hiển thị dữ liệu.
-        Nó không trực tiếp nhận gói UDP.
-    """
+    """In danh sách peer từ DiscoveryService; báo nếu danh sách rỗng."""
 
     peers = discovery.list_peers()
     if not peers: 
@@ -38,21 +24,8 @@ def show_peers(discovery: DiscoveryService)  -> None:
 
 
 def main() -> None:
-    """
-    Hàm khởi động chương trình LAN Chat.
-    Tham số:
-        Không có.
-    Trả về:
-        None.
-    Chức năng:
-        1. Nhận thông tin người dùng từ bàn phím.
-        2. Tạo đối tượng LocalProfile.
-        3. Hiển thị thông tin người dùng.
-
-    Lưu ý:
-        Chưa khởi động UDPBroadcaster hoặc UDPListener.
-        Các thành phần UDP được chạy thử riêng.
-    """
+    """Nhập hồ sơ, mở TCP và UDP discovery rồi xử lý lệnh console.
+    Dừng UDP khi thoát; listener TCP hiện chưa được đóng tại đây."""
 
     print("===== LAN CHAT P2P =====")
 
@@ -146,7 +119,7 @@ def main() -> None:
         print("\nĐang thoát chương trình...")
 
     finally:
-        # BƯỚC 6: Luôn dừng UDP khi thoát.
+        # Dừng UDP trước khi thoát vòng điều phối.
         discovery.stop()
 
         print("Đã dừng UDP Discovery.")
