@@ -1,153 +1,89 @@
-"""Kiểu hiển thị ttk dùng chung cho cửa sổ LAN Chat."""
+"""Bảng màu và kiểu widget dùng chung cho giao diện LAN Chat."""
 
 import tkinter as tk
 from tkinter import ttk
 
 
+BACKGROUND = "#f3f6f4"
+SURFACE = "#ffffff"
+SIDEBAR = "#183b3b"
+ACCENT = "#16796b"
+TEXT = "#19352f"
+MUTED = "#647970"
+BORDER = "#dce6df"
+
+
 def configure_styles(root: tk.Tk) -> ttk.Style:
-    """Áp dụng theme của cửa sổ và trả về bộ style đã cấu hình."""
+    """Cấu hình theme ttk, font và trạng thái tương tác; trả bộ style của root."""
     style = ttk.Style(root)
-    try:
-        style.theme_use("clam")
-    except tk.TclError:
-        pass
+    style.theme_use("clam")
+    root.configure(background=BACKGROUND)
+    root.option_add("*Font", "{Segoe UI} 10")
+    style.configure(".", font=("Segoe UI", 10), background=BACKGROUND, foreground=TEXT)
+    style.configure("TFrame", background=BACKGROUND)
+    style.configure("Card.TFrame", background=SURFACE)
+    style.configure("Header.TFrame", background=SURFACE)
+    style.configure("Sidebar.TFrame", background=SIDEBAR)
+    style.configure("Footer.TFrame", background=BACKGROUND)
+    style.configure("InviteCard.TFrame", background="#eaf3ef")
+    style.configure("TLabel", background=BACKGROUND, foreground=TEXT)
+    style.configure("Card.TLabel", background=SURFACE, foreground=TEXT)
+    style.configure("Sidebar.TLabel", background=SIDEBAR, foreground="#eff7f2")
+    style.configure("SectionTitle.TLabel", background=SIDEBAR,
+                    foreground="#b8d6cd", font=("Segoe UI", 9, "bold"))
+    style.configure("Invite.TLabel", background="#eaf3ef", foreground="#285b4d")
+    style.configure("Notice.TLabel", background=BACKGROUND,
+                    foreground=MUTED, font=("Segoe UI", 9))
 
-    # Màu sắc chủ đạo (Design Tokens)
-    bg_app = "#f8fafc"         # Nền tổng thể (Slate 50)
-    bg_card = "#ffffff"        # Nền card / vùng làm việc chính
-    bg_sidebar = "#f1f5f9"     # Nền thanh sidebar (Slate 100)
-    border_color = "#e2e8f0"   # Màu viền tinh giản (Slate 200)
-    primary_color = "#4f46e5"  # Màu nhấn Indigo chính
-    primary_hover = "#4338ca"  # Màu hover Indigo
-    text_primary = "#0f172a"   # Chữ chính (Slate 900)
-    text_muted = "#64748b"     # Chữ phụ / ghi chú (Slate 500)
-    success_color = "#10b981"  # Màu xanh thành công (Emerald 500)
-    danger_color = "#ef4444"   # Màu đỏ cảnh báo / từ chối (Rose 500)
-
-    # Thiết lập Frame & Label nền tảng
-    style.configure("TFrame", background=bg_app)
-    style.configure("Card.TFrame", background=bg_card, relief="flat")
-    style.configure("Sidebar.TFrame", background=bg_sidebar)
-    style.configure("Header.TFrame", background=bg_card)
-    style.configure("Footer.TFrame", background=bg_sidebar)
-    style.configure("InviteCard.TFrame", background="#eff6ff")
-
-    style.configure(
-        "TLabel",
-        background=bg_app,
-        foreground=text_primary,
-        font=("Segoe UI", 10),
-    )
-    style.configure(
-        "Card.TLabel",
-        background=bg_card,
-        foreground=text_primary,
-        font=("Segoe UI", 10),
-    )
-    style.configure(
-        "Sidebar.TLabel",
-        background=bg_sidebar,
-        foreground=text_primary,
-        font=("Segoe UI", 10),
-    )
-    style.configure(
-        "SectionTitle.TLabel",
-        background=bg_sidebar,
-        foreground="#334155",
-        font=("Segoe UI", 9, "bold"),
-    )
-    style.configure(
-        "Invite.TLabel",
-        background="#eff6ff",
-        foreground="#1e40af",
-        font=("Segoe UI", 10),
-    )
-    style.configure(
-        "Notice.TLabel",
-        background=bg_sidebar,
-        foreground=text_muted,
-        font=("Segoe UI", 9),
-    )
-
-    # Style cho Nút bấm chính (Primary Button: Indigo)
-    style.configure(
-        "Primary.TButton",
-        background=primary_color,
-        foreground="#ffffff",
-        font=("Segoe UI", 10, "bold"),
-        borderwidth=0,
-        padding=(12, 6),
-    )
-    style.map(
-        "Primary.TButton",
-        background=[("disabled", "#cbd5e1"), ("active", primary_hover)],
-        foreground=[("disabled", "#94a3b8")],
-    )
-
-    # Style cho Nút thành công (Success Button: Green / Đồng ý)
-    style.configure(
-        "Success.TButton",
-        background=success_color,
-        foreground="#ffffff",
-        font=("Segoe UI", 10, "bold"),
-        borderwidth=0,
-        padding=(12, 6),
-    )
-    style.map(
-        "Success.TButton",
-        background=[("disabled", "#cbd5e1"), ("active", "#059669")],
-        foreground=[("disabled", "#94a3b8")],
-    )
-
-    # Style cho Nút cảnh báo (Danger Button: Red / Từ chối)
-    style.configure(
-        "Danger.TButton",
-        background=danger_color,
-        foreground="#ffffff",
-        font=("Segoe UI", 10, "bold"),
-        borderwidth=0,
-        padding=(12, 6),
-    )
-    style.map(
-        "Danger.TButton",
-        background=[("disabled", "#cbd5e1"), ("active", "#dc2626")],
-        foreground=[("disabled", "#94a3b8")],
-    )
-
-    # Style cho Nút phụ (Secondary Button: Slate outline)
-    style.configure(
-        "Secondary.TButton",
-        background="#f1f5f9",
-        foreground="#475569",
-        font=("Segoe UI", 9),
-        borderwidth=1,
-        padding=(10, 5),
-    )
-    style.map(
-        "Secondary.TButton",
-        background=[("disabled", "#f8fafc"), ("active", "#e2e8f0")],
-        foreground=[("disabled", "#cbd5e1")],
-    )
-
-    # Style cho ô nhập liệu (Entry)
-    style.configure(
-        "Modern.TEntry",
-        fieldbackground="#ffffff",
-        foreground=text_primary,
-        padding=6,
-        font=("Segoe UI", 10),
-        borderwidth=1,
-    )
-
-    # Checkbutton & Combobox
-    style.configure(
-        "TCheckbutton",
-        background=bg_card,
-        foreground=text_primary,
-        font=("Segoe UI", 9),
-    )
-    style.configure(
-        "TCombobox",
-        font=("Segoe UI", 9),
-    )
+    # Cùng kích thước thao tác cho cả các nút chính và nút phụ.
+    style.configure("TButton", padding=(12, 8), relief="flat", borderwidth=0)
+    for name, color, hover in (
+        ("Primary", ACCENT, "#116456"),
+        ("Success", "#28795b", "#1b6045"),
+        ("Danger", "#ae4a45", "#923d38"),
+    ):
+        style.configure(f"{name}.TButton", background=color, foreground="white",
+                        font=("Segoe UI", 10, "bold"), padding=(14, 8),
+                        borderwidth=0, relief="flat", focusthickness=2, focuscolor="#9cc5b6")
+        style.map(f"{name}.TButton",
+                  background=[("disabled", "#e3eae5"), ("pressed", hover), ("active", hover)],
+                  foreground=[("disabled", "#8b9c92")])
+    style.configure("Secondary.TButton", background="#eaf0ec", foreground="#345b4f",
+                    font=("Segoe UI", 10), padding=(12, 8), borderwidth=0)
+    style.map("Secondary.TButton", background=[("disabled", "#f0f3f0"), ("active", "#dce9e1")],
+              foreground=[("disabled", "#8b9c92")])
+    style.configure("Sidebar.TButton", background="#28504d", foreground="#e7f5ee",
+                    padding=(6, 3), borderwidth=0, font=("Segoe UI", 13))
+    style.map("Sidebar.TButton", background=[("active", "#376a61")],
+              foreground=[("disabled", "#9cb6ab")])
+    style.configure("Modern.TEntry", fieldbackground=SURFACE, foreground=TEXT,
+                    bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
+                    padding=(10, 9), insertcolor=TEXT)
+    style.map("Modern.TEntry", bordercolor=[("focus", ACCENT)],
+              fieldbackground=[("disabled", "#f2f5f2")],
+              foreground=[("disabled", "#8b9c92")])
+    style.configure("TCheckbutton", background=SURFACE, foreground=MUTED,
+                    font=("Segoe UI", 9), focuscolor=SURFACE)
+    style.map("TCheckbutton", background=[("active", SURFACE)])
+    style.configure("TCombobox", padding=(8, 5), arrowsize=12,
+                    fieldbackground=SURFACE, background="#edf3ee", bordercolor=BORDER)
+    style.map("TCombobox", fieldbackground=[("readonly", SURFACE)],
+              foreground=[("readonly", TEXT)], selectbackground=[("readonly", SURFACE)],
+              selectforeground=[("readonly", TEXT)])
+    style.configure("TScrollbar", background="#c3d4c8", troughcolor=BACKGROUND,
+                    bordercolor="#c3d4c8", lightcolor="#c3d4c8", darkcolor="#c3d4c8",
+                    relief="flat", gripcount=0, borderwidth=0, arrowsize=11)
+    style.map("TScrollbar", background=[("active", "#9cb6a7")])
+    style.configure("Sidebar.Vertical.TScrollbar", background="#365a52", troughcolor=SIDEBAR,
+                    bordercolor="#365a52", lightcolor="#365a52", darkcolor="#365a52",
+                    arrowcolor="#b8d6cd", borderwidth=0, arrowsize=10)
+    style.configure("Sidebar.Horizontal.TScrollbar", background="#365a52", troughcolor=SIDEBAR,
+                    bordercolor="#365a52", lightcolor="#365a52", darkcolor="#365a52",
+                    arrowcolor="#b8d6cd", borderwidth=0, arrowsize=10)
+    for orientation, sticky in (("Vertical", "ns"), ("Horizontal", "ew")):
+        style.layout(f"{orientation}.TScrollbar", [
+            (f"{orientation}.Scrollbar.trough", {"sticky": sticky, "children": [
+                (f"{orientation}.Scrollbar.thumb", {"expand": True, "sticky": "nsew"}),
+            ]}),
+        ])
     return style

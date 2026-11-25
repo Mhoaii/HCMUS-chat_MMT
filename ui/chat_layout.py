@@ -15,7 +15,7 @@ def build_header(
         frame,
         bg="#ffffff",
         bd=0,
-        highlightbackground="#e2e8f0",
+        highlightbackground="#dce6df",
         highlightthickness=1,
     )
     header_container.grid(
@@ -33,12 +33,12 @@ def build_header(
 
     avatar_lbl = tk.Label(
         user_badge,
-        text="👤",
-        font=("Segoe UI Emoji", 14),
-        bg="#e0e7ff",
-        fg="#4338ca",
-        padx=8,
-        pady=4,
+        text=(display_name.strip() or username.strip() or "?")[0].upper(),
+        font=("Segoe UI", 18, "bold"),
+        bg="#dceee4",
+        fg="#16796b",
+        padx=14,
+        pady=8,
     )
     avatar_lbl.grid(row=0, column=0, padx=(0, 10))
 
@@ -56,7 +56,7 @@ def build_header(
         user_text_frame,
         text=f"@{username} · {job_title}",
         font=("Segoe UI", 9),
-        foreground="#64748b",
+        foreground="#647970",
         style="Card.TLabel",
     ).pack(anchor="w", fill="x")
 
@@ -97,9 +97,9 @@ def build_footer(frame: ttk.Frame) -> tk.StringVar:
     """Tạo thanh thông báo và trả biến điều khiển nội dung."""
     footer = tk.Frame(
         frame,
-        bg="#f1f5f9",
+        bg="#f3f6f4",
         bd=0,
-        highlightbackground="#e2e8f0",
+        highlightbackground="#dce6df",
         highlightthickness=1,
         padx=14,
         pady=6,

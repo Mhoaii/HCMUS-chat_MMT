@@ -158,7 +158,7 @@ class ChatWindow:
 
     def _build_chat_view(self) -> None:
         """Ghép các phần của màn hình chat và kết nối thao tác với controller."""
-        self.root.geometry("980x640")
+        self.root.geometry("1120x740")
         self.root.minsize(780, 500)
         self.chat_frame = ttk.Frame(self.root, padding=0)
         self.chat_frame.pack(fill="both", expand=True)

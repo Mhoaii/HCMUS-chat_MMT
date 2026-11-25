@@ -11,9 +11,9 @@ def build_sidebar(
     """Dựng hai danh sách và nút tải lại."""
     sidebar_container = tk.Frame(
         frame,
-        bg="#f1f5f9",
+        bg="#183b3b",
         bd=0,
-        highlightbackground="#e2e8f0",
+        highlightbackground="#183b3b",
         highlightthickness=1,
     )
     sidebar_container.grid(
@@ -24,7 +24,7 @@ def build_sidebar(
     sidebar_container.rowconfigure(1, weight=1)
 
     # Mục 1: Người dùng LAN (Online Peers)
-    peers_section = ttk.Frame(sidebar_container, style="Sidebar.TFrame", padding=(12, 12, 12, 6))
+    peers_section = ttk.Frame(sidebar_container, style="Sidebar.TFrame", padding=(16, 20, 16, 12))
     peers_section.grid(row=0, column=0, sticky="nsew")
 
     peers_header = ttk.Frame(peers_section, style="Sidebar.TFrame")
@@ -32,7 +32,7 @@ def build_sidebar(
 
     ttk.Label(
         peers_header,
-        text="NGƯỜI DÙNG LAN",
+        text="Người dùng LAN",
         style="SectionTitle.TLabel",
     ).pack(side="left")
 
@@ -40,7 +40,7 @@ def build_sidebar(
         peers_header,
         text="↻",
         width=3,
-        style="Secondary.TButton",
+        style="Sidebar.TButton",
         command=on_reload,
     )
     reload_peers_button.pack(side="right")
@@ -48,7 +48,7 @@ def build_sidebar(
     peer_list = _scrollable_list(peers_section)
 
     # Mục 2: Cuộc trò chuyện gần đây (Conversations)
-    recent_section = ttk.Frame(sidebar_container, style="Sidebar.TFrame", padding=(12, 6, 12, 12))
+    recent_section = ttk.Frame(sidebar_container, style="Sidebar.TFrame", padding=(16, 12, 16, 20))
     recent_section.grid(row=1, column=0, sticky="nsew")
 
     recent_header = ttk.Frame(recent_section, style="Sidebar.TFrame")
@@ -56,7 +56,7 @@ def build_sidebar(
 
     ttk.Label(
         recent_header,
-        text="CUỘC TRÒ CHUYỆN",
+        text="Cuộc trò chuyện",
         style="SectionTitle.TLabel",
     ).pack(side="left")
 
@@ -75,25 +75,25 @@ def _scrollable_list(section: ttk.Frame) -> tk.Listbox:
         width=26,
         height=6,
         exportselection=False,
-        bg="#ffffff",
-        fg="#1e293b",
-        selectbackground="#e0e7ff",
-        selectforeground="#1e1b4b",
+        bg="#183b3b",
+        fg="#e1eee6",
+        selectbackground="#326759",
+        selectforeground="#ffffff",
         relief="flat",
         bd=0,
-        highlightbackground="#cbd5e1",
+        highlightbackground="#31534b",
         highlightthickness=1,
-        highlightcolor="#6366f1",
-        font=("Segoe UI", 10),
+        highlightcolor="#74b49a",
+        font=("Segoe UI", 11),
         activestyle="none",
     )
     items.grid(row=0, column=0, sticky="nsew")
     scroll_y = ttk.Scrollbar(
-        body, orient="vertical", command=items.yview,
+        body, orient="vertical", command=items.yview, style="Sidebar.Vertical.TScrollbar",
     )
     scroll_y.grid(row=0, column=1, sticky="ns")
     scroll_x = ttk.Scrollbar(
-        body, orient="horizontal", command=items.xview,
+        body, orient="horizontal", command=items.xview, style="Sidebar.Horizontal.TScrollbar",
     )
     scroll_x.grid(row=1, column=0, sticky="ew")
     items.configure(

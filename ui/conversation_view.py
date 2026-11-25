@@ -10,7 +10,7 @@ from ui.message_history import MessageHistory
 
 def build_conversation(frame: ttk.Frame) -> tuple[ttk.Frame, tk.StringVar]:
     """Dựng cột hội thoại và tiêu đề của người đang được chọn."""
-    conversation_container = ttk.Frame(frame, padding=16)
+    conversation_container = ttk.Frame(frame, padding=(20, 12, 20, 12))
     conversation_container.grid(row=1, column=1, sticky="nsew")
     conversation_container.columnconfigure(0, weight=1)
     conversation_container.rowconfigure(2, weight=1)
@@ -20,7 +20,7 @@ def build_conversation(frame: ttk.Frame) -> tuple[ttk.Frame, tk.StringVar]:
         conversation_container,
         bg="#ffffff",
         bd=0,
-        highlightbackground="#e2e8f0",
+        highlightbackground="#dce6df",
         highlightthickness=1,
     )
     chat_header_card.grid(row=0, column=0, sticky="ew", pady=(0, 10))
@@ -32,8 +32,8 @@ def build_conversation(frame: ttk.Frame) -> tuple[ttk.Frame, tk.StringVar]:
     chat_title_label = ttk.Label(
         chat_header_inner,
         textvariable=chat_title_var,
-        font=("Segoe UI", 12, "bold"),
-        foreground="#0f172a",
+        font=("Segoe UI", 14, "bold"),
+        foreground="#19352f",
         style="Card.TLabel",
     )
     chat_title_label.pack(fill="x")
@@ -51,9 +51,9 @@ def build_invitation(
     """Dựng thẻ mời và gắn các hành động của phiên chat."""
     invitation_frame = tk.Frame(
         conversation_container,
-        bg="#eff6ff",
+        bg="#eaf3ef",
         bd=0,
-        highlightbackground="#bfdbfe",
+        highlightbackground="#c7dfd1",
         highlightthickness=1,
         padx=14,
         pady=10,
@@ -106,7 +106,7 @@ def build_history(conversation_container: ttk.Frame) -> ScrolledText:
         conversation_container,
         bg="#ffffff",
         bd=0,
-        highlightbackground="#e2e8f0",
+        highlightbackground="#dce6df",
         highlightthickness=1,
     )
     history_card.grid(row=2, column=0, sticky="nsew")
@@ -118,36 +118,53 @@ def build_history(conversation_container: ttk.Frame) -> ScrolledText:
         width=40,
         height=12,
         bg="#ffffff",
-        fg="#0f172a",
+        fg="#19352f",
         bd=0,
         relief="flat",
         padx=16,
         pady=14,
-        font=("Segoe UI", 10),
-        spacing1=2,
-        spacing3=4,
+        font=("Segoe UI", 11),
+        spacing1=4,
+        spacing3=6,
     )
     history_text.pack(fill="both", expand=True)
+    history_text.vbar.pack_forget()
+    scrollbar = ttk.Scrollbar(history_text.frame, command=history_text.yview)
+    scrollbar.pack(side="right", fill="y", before=history_text._w)
+    history_text.configure(yscrollcommand=scrollbar.set)
 
     # Cấu hình các thẻ hiển thị kiểu dáng bong bóng tin nhắn (Message tags)
     history_text.tag_configure(
         "user_sender",
-        foreground="#4f46e5",
+        foreground="#16796b",
         font=("Segoe UI", 9, "bold"),
-        spacing1=6,
+        justify="right",
+        rmargin=12,
+        spacing1=12,
     )
     history_text.tag_configure(
         "partner_sender",
-        foreground="#0d9488",
+        foreground="#476a5c",
         font=("Segoe UI", 9, "bold"),
-        spacing1=6,
+        lmargin1=12,
+        lmargin2=12,
+        spacing1=12,
     )
     history_text.tag_configure(
         "msg_content",
-        foreground="#1e293b",
-        font=("Segoe UI", 10),
+        foreground="#29473e",
+        font=("Segoe UI", 11),
         spacing3=8,
     )
+    history_text.tag_configure("outgoing", background="#e5f1e9", justify="right",
+                               lmargin1=48, lmargin2=48, rmargin=12)
+    history_text.tag_configure("incoming", background="#f0f4f1",
+                               lmargin1=12, lmargin2=12, rmargin=48)
+    history_text.tag_configure("file_sender", foreground="#647970",
+                               font=("Segoe UI", 9, "bold"), spacing1=12)
+    history_text.tag_configure("file_content", foreground="#496353",
+                               background="#f4f6ef", spacing3=10)
+    history_text.tag_configure("delivery", foreground="#647970", font=("Segoe UI", 9))
     return history_text
 
 
@@ -159,7 +176,7 @@ def build_composer(
         conversation_container,
         bg="#ffffff",
         bd=0,
-        highlightbackground="#e2e8f0",
+        highlightbackground="#dce6df",
         highlightthickness=1,
     )
     composer_card.grid(row=3, column=0, sticky="ew", pady=(10, 0))
@@ -199,12 +216,12 @@ def build_composer(
 
 def build_attachment(panel: ttk.Frame, on_send: Callable, on_remove: Callable):
     """Hiện tên file đã chọn và hai thao tác trước khi gửi lời mời."""
-    row = ttk.Frame(panel)
+    row = ttk.Frame(panel, padding=(10, 8))
     row.grid(row=4, column=0, sticky="ew", pady=(4, 0))
     row.columnconfigure(0, weight=1)
     name = tk.StringVar(panel)
     ttk.Label(row, textvariable=name, width=1).grid(row=0, column=0, sticky="ew")
-    ttk.Button(row, text="Bỏ chọn", command=on_remove).grid(row=0, column=1)
+    ttk.Button(row, text="Bỏ chọn", command=on_remove, style="Secondary.TButton").grid(row=0, column=1)
     send = ttk.Button(row, text="Gửi file", command=on_send, style="Primary.TButton")
     send.grid(row=0, column=2, padx=(8, 0))
     return row, name, send
@@ -217,9 +234,14 @@ def render_history(widget: ScrolledText, history: MessageHistory, username: str 
     if username is not None:
         for row, (sender, text) in enumerate(history.messages.get(username, [])):
             tag = "user_sender" if sender == "Bạn" else "partner_sender"
+            content_tag = "outgoing" if sender == "Bạn" else "incoming"
+            if sender == "File":
+                tag, content_tag = "file_sender", "file_content"
             widget.insert(tk.END, f"{sender}:\n", tag)
             status = history.delivery_status(username, row)
-            suffix = f"\n{status}" if status else ""
-            widget.insert(tk.END, f"{text}{suffix}\n\n", "msg_content")
+            widget.insert(tk.END, text, ("msg_content", content_tag))
+            if status:
+                widget.insert(tk.END, f"\n{status}", ("user_sender", "delivery"))
+            widget.insert(tk.END, "\n\n")
     widget.configure(state="disabled")
     widget.see(tk.END)
