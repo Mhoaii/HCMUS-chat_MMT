@@ -1,15 +1,18 @@
 """Kiểm thử lời mời và UI bằng socket TCP thật trên loopback."""
 
-import json
+import gc
 import queue
 import socket
 import threading
 import time
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from models.peer import LocalProfile, Peer
 from network.tcp.chat_session import ChatSessionService, PROTOCOL
+from network.tcp.framing import HEADER, encode_frame, recv_frame, send_frame
 from network.tcp.tcp_service import TCPChatService
 from ui.app import ChatWindow
 
@@ -20,6 +23,7 @@ class ChatSessionTests(unittest.TestCase):
     def setUp(self) -> None:
         """Mở hai listener riêng; ghi sự kiện mà không sử dụng Tk."""
         self.services = []
+        self.downloads = Path(self.enterContext(TemporaryDirectory()))
         self.events = {}
         self.worker_errors = []
         self.old_hook = threading.excepthook
@@ -43,7 +47,7 @@ class ChatSessionTests(unittest.TestCase):
         profile = LocalProfile(username, username.upper(), "SV", listener.start(0))
         events = queue.Queue()
         service = ChatSessionService(
-            profile, listener, lambda *event: events.put(event), **options,
+            profile, listener, lambda *event: events.put(event), downloads=self.downloads / username, **options,
         )
         self.events[username] = events
         self.services.append(service)
@@ -111,6 +115,168 @@ class ChatSessionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.a.send_text("b", "a" * 16_001)
 
+    def test_terminal_send_offers_file_before_transferring_bytes(self) -> None:
+        """Lệnh /send qua phiên thật chỉ thông báo tên, kích thước, hash và mã lần gửi."""
+        import hashlib
+        import uuid
+        import main as cli
+
+        self.accept_pair(self.a, self.b)
+        with TemporaryDirectory() as folder:
+            path = Path(folder, "báo cáo.txt")
+            content = "Nội dung riêng của file".encode("utf-8")
+            path.write_bytes(content)
+            from unittest.mock import Mock
+            discovery = Mock()
+            discovery.get_peer.return_value = self.peer(self.b)
+
+            def commands():
+                """Chọn b, gửi file rồi chờ b nhận và trả lời trước khi rời chat."""
+                yield "/chat b"
+                yield f'/send "{path}"'
+                received.append(self.wait_event("b", "file_offer"))
+                self.b.send_text("a", "Vẫn đang chat")
+                self.assertEqual(self.wait_event("a", "message")[2]["text"], "Vẫn đang chat")
+                yield "/leave"
+                yield "/quit"
+
+            received = []
+            with patch("builtins.input", side_effect=commands()), patch("builtins.print"):
+                cli.run_console(discovery, self.a)
+            _, sender, offer = received[0]
+            self.assertEqual(sender, "a")
+            self.assertEqual(set(offer), {"transfer_id", "name", "size", "sha256"})
+            self.assertEqual(uuid.UUID(hex=offer["transfer_id"]).hex, offer["transfer_id"])
+            self.assertEqual(offer["name"], path.name)
+            self.assertEqual(offer["size"], len(content))
+            self.assertEqual(offer["sha256"], hashlib.sha256(content).hexdigest())
+
+    def test_file_reply_matches_pending_offer(self) -> None:
+        """Hai lời mời cùng tên được trả lời ngược thứ tự, mỗi mã chỉ dùng một lần."""
+        self.accept_pair(self.a, self.b)
+        with TemporaryDirectory() as folder:
+            path = Path(folder, "báo cáo.txt")
+            path.write_bytes(b"abc")
+            ids = []
+            for _ in range(2):
+                self.a.offer_file("b", path)
+                ids.append(self.wait_event("b", "file_offer")[2]["transfer_id"])
+            self.assertNotEqual(*ids)
+            for transfer_id, accepted in ((ids[1], False), (ids[0], True)):
+                self.b.reply_file("a", transfer_id, accepted)
+                _, peer, reply = self.wait_event("a", "file_reply")
+                self.assertEqual((peer, reply["transfer_id"], reply["name"], reply["accepted"]),
+                                 ("b", transfer_id, path.name, accepted))
+                with self.assertRaises(ValueError):
+                    self.b.reply_file("a", transfer_id, accepted)
+            self.b.send_text("a", "Vẫn đang chat")
+            self.assertEqual(self.wait_event("a", "message")[2]["text"], "Vẫn đang chat")
+
+    def test_transfer_while_chatting(self) -> None:
+        """Dừng giữa hai khối dữ liệu để xác nhận chat và ACK vẫn hoạt động."""
+        from network.tcp.file_transfer import send_file_bytes
+        self.accept_pair(self.a, self.b)
+        resume = threading.Event()
+        data = bytes(range(256)) * 700
+        path = self.downloads / "ảnh thử.bin"
+        path.write_bytes(data)
+        (self.downloads / "b").mkdir()
+        existing = self.downloads / "b" / path.name
+        existing.write_bytes(b"keep")
+
+        def slow_send(conn, path, size, progress):
+            def pause(count):
+                progress(count)
+                if count < size and not resume.wait(3):
+                    raise TimeoutError("Worker gửi file chưa được tiếp tục")
+            return send_file_bytes(conn, path, size, pause)
+
+        self.a.offer_file("b", path)
+        offer = self.wait_event("b", "file_offer")[2]
+        with patch("network.tcp.chat_session.send_file_bytes", slow_send):
+            self.b.reply_file("a", offer["transfer_id"], True)
+            try:
+                self.wait_event("b", "file_progress")
+                self.b.send_text("a", "Chat giữa hai khối file")
+                self.assertEqual(self.wait_event("a", "message")[2]["text"], "Chat giữa hai khối file")
+                self.wait_event("b", "ack_received")
+            finally:
+                resume.set()
+            saved = Path(self.wait_event("b", "file_received")[2]["path"])
+            self.wait_event("a", "file_sent")
+        self.assertEqual(saved.read_bytes(), data)
+        self.assertEqual(existing.read_bytes(), b"keep")
+        self.assertFalse(list(saved.parent.glob("*.part")))
+
+    def test_transfer_changed_content(self) -> None:
+        """File cùng kích thước nhưng khác hash được dọn sạch, phiên chat còn mở."""
+        self.accept_pair(self.a, self.b)
+        path = self.downloads / "changed.txt"
+        path.write_bytes(b"abc")
+        self.a.offer_file("b", path)
+        offer = self.wait_event("b", "file_offer")[2]
+        path.write_bytes(b"xyz")
+        self.b.reply_file("a", offer["transfer_id"], True)
+        self.assertIn("SHA-256", self.wait_event("b", "file_error")[2]["reason"])
+        self.wait_event("a", "file_error")
+        self.assertEqual(list(self.b.downloads.iterdir()), [])
+        self.assertEqual(self.state(self.a, "b"), "ready")
+
+    def test_same_text_has_distinct_message_ids(self) -> None:
+        """Hai tin cùng nội dung trong một phiên phải có hai UUID riêng."""
+        import uuid
+
+        self.accept_pair(self.a, self.b)
+        with patch("network.tcp.chat_session.send_frame", wraps=send_frame) as writer:
+            for _ in range(2):
+                self.a.send_text("b", "OK")
+                self.assertEqual(self.wait_event("b", "message")[2]["text"], "OK")
+
+        messages = [
+            call.args[1] for call in writer.call_args_list
+            if call.args[1]["type"] == "message"
+        ]
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0]["request_id"], messages[1]["request_id"])
+        for packet in messages:
+            self.assertIn("message_id", packet)
+        first_id, second_id = (uuid.UUID(hex=p["message_id"]) for p in messages)
+        self.assertNotEqual(first_id, second_id)
+
+    def test_ack_returns_original_message_id(self) -> None:
+        """ACK về đúng bên gửi và mang mã của từng tin đã tiếp nhận."""
+        self.accept_pair(self.a, self.b)
+        with patch("network.tcp.chat_session.send_frame", wraps=send_frame) as writer:
+            for _ in range(2):
+                self.a.send_text("b", "OK")
+                self.assertEqual(self.wait_event("b", "message")[2]["text"], "OK")
+                sender, payload = self.wait_event("a", "ack_received")[1:]
+                sent = [call.args[1] for call in writer.call_args_list
+                        if call.args[1]["type"] == "message"]
+                self.assertEqual(sender, "b")
+                self.assertEqual(payload["message_id"], sent[-1]["message_id"])
+
+    def test_duplicate_and_unknown_ack_are_ignored(self) -> None:
+        """Mỗi tin gửi chỉ được xác nhận một lần trong đúng phiên."""
+        import uuid
+
+        self.accept_pair(self.a, self.b)
+        self.a.send_text("b", "OK")
+        _, _, ack = self.wait_event("a", "ack_received")
+        link = self.a._links["b"]
+
+        with patch.object(self.a, "emit", wraps=self.a.emit) as emit:
+            for message_id in (ack["message_id"], uuid.uuid4().hex):
+                self.a._handle_packet(link, {
+                    "protocol": PROTOCOL,
+                    "request_id": link.request_id,
+                    "type": "ack",
+                    "message_id": message_id,
+                })
+            self.assertFalse(any(call.args[0] == "ack_received"
+                                 for call in emit.call_args_list))
+        self.assertEqual(self.state(self.a, "b"), "ready")
+
     def test_decline_and_reinvite(self) -> None:
         """Từ chối giải phóng cả hai socket; mời lại vẫn hoạt động."""
         self.a.invite(self.peer(self.b))
@@ -168,15 +334,14 @@ class ChatSessionTests(unittest.TestCase):
                                "away", time.monotonic(), port))
             self.wait(lambda: self.state(self.a, "offline") == "closed")
         self.accept_pair(self.a, self.b)
-        from network.tcp.tcp_chat import send_message
 
-        def fail_message(connection: socket.socket, text: str) -> None:
+        def fail_message(connection: socket.socket, packet: dict) -> None:
             """Gây lỗi riêng ở tin chat, giữ nguyên các gói điều khiển."""
-            if json.loads(text)["type"] == "message":
+            if packet["type"] == "message":
                 raise OSError("Lỗi gửi dùng trong test")
-            send_message(connection, text)
+            send_frame(connection, packet)
 
-        with patch("network.tcp.chat_session.send_message", fail_message):
+        with patch("network.tcp.chat_session.send_frame", fail_message):
             self.a.send_text("b", "Nội dung cần giữ")
             event = self.wait_event("a", "send_failed")
             self.assertEqual(event[2]["text"], "Nội dung cần giữ")
@@ -185,16 +350,15 @@ class ChatSessionTests(unittest.TestCase):
     def test_completed_send_is_recorded_even_if_eof_arrives_first(self) -> None:
         """EOF ngay sau sendall không làm biến mất tin đã gửi khỏi lịch sử local."""
         self.accept_pair(self.a, self.b)
-        from network.tcp.tcp_chat import send_message
         link = self.a._links["b"]
 
-        def send_then_disconnect(connection: socket.socket, text: str) -> None:
+        def send_then_disconnect(connection: socket.socket, packet: dict) -> None:
             """Cho reader kết thúc trước khi writer kịp phát sự kiện sent."""
-            send_message(connection, text)
-            if json.loads(text)["type"] == "message":
+            send_frame(connection, packet)
+            if packet["type"] == "message":
                 self.a._drop(link, "EOF mô phỏng ngay sau gửi")
 
-        with patch("network.tcp.chat_session.send_message", send_then_disconnect):
+        with patch("network.tcp.chat_session.send_frame", send_then_disconnect):
             self.a.send_text("b", "Tin vừa gửi")
             self.assertEqual(self.wait_event("a", "sent")[2]["text"], "Tin vừa gửi")
 
@@ -202,7 +366,7 @@ class ChatSessionTests(unittest.TestCase):
         """Dữ liệu sai chỉ đóng socket lỗi; listener còn nhận lời mời mới."""
         with socket.create_connection(("127.0.0.1", self.b.profile.tcp_port)) as raw:
             raw.settimeout(2)
-            raw.sendall(b"not-json\n")
+            raw.sendall(HEADER.pack(255, 0))
             self.assertEqual(raw.recv(1), b"")
         self.accept_pair(self.a, self.b)
 
@@ -214,15 +378,16 @@ class ChatSessionTests(unittest.TestCase):
                       username="raw", display_name="Người thử 👋", tcp_port=12345, to="b")
         with socket.create_connection(("127.0.0.1", self.b.profile.tcp_port)) as raw:
             raw.settimeout(2)
-            data = (json.dumps(packet, ensure_ascii=False) + "\n").encode()
+            data = encode_frame(packet)
             for start in range(0, len(data), 3):
                 raw.sendall(data[start:start + 3])
             self.wait(lambda: self.state(self.b, "raw") == "incoming")
             self.b.accept_chat("raw")
-            self.assertIn(b'"accept"', raw.recv(4096))
+            self.assertEqual(recv_frame(raw)["type"], "accept")
             messages = [dict(protocol=PROTOCOL, request_id=request_id,
-                             type="message", text=f"Tin {i} 👋") for i in range(3)]
-            raw.sendall("".join(json.dumps(p) + "\n" for p in messages).encode())
+                             type="message", message_id=uuid.uuid4().hex,
+                             text=f"Tin {i} 👋") for i in range(3)]
+            raw.sendall(b"".join(encode_frame(p) for p in messages))
             received = [self.wait_event("b", "message")[2]["text"] for _ in range(3)]
             self.assertEqual(received, [f"Tin {i} 👋" for i in range(3)])
 
@@ -280,9 +445,13 @@ class ChatWindowTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         """Đóng mọi Tk root và xác nhận callback không phát sinh lỗi."""
-        for app in self.apps:
+        while self.apps:
+            app = self.apps.pop()
             if app.root.winfo_exists():
                 app._on_close()
+            del app
+        # Thu hồi cả các đối tượng Tk có tham chiếu vòng ngay trên luồng UI.
+        gc.collect()
         self.assertEqual(self.errors, [])
 
     def wait(self, predicate, timeout: float = 3) -> None:
@@ -321,6 +490,8 @@ class ChatWindowTests(unittest.TestCase):
         self.wait(lambda: len(b.chat_history[a.username]) == len(a.chat_history[b.username]) == 1)
         self.assertEqual(b.chat_history[a.username][0][1], "Xin chào Hoài 👋")
         self.assertEqual(a.chat_history[b.username][0][0], "Bạn")
+        self.wait(lambda: "Đã nhận" in a.history_text.get("1.0", "end-1c"))
+        self.assertNotIn("Đã nhận", b.history_text.get("1.0", "end-1c"))
         b.message_var.set("Nội dung đang gõ")
         b._show_conversation(c.username)
         a.message_var.set("Tin tới khi bạn đang mở Minh")
@@ -347,6 +518,149 @@ class ChatWindowTests(unittest.TestCase):
         self.assertEqual(str(c.send_button["state"]), "disabled")
         self.assertTrue(b.chat_history[a.username])
 
+    def test_choose_file_for_ready_conversation(self) -> None:
+        """Chọn file cho đúng peer, giữ bản đã chọn khi hủy hoặc chọn file lỗi."""
+        a, b, c = self.apps
+        a._show_conversation(b.username)
+        self.assertTrue(a.file_button.instate(["disabled"]))
+        a.invite_button.invoke()
+        self.wait(lambda: b._chat_states.get(a.username) == "incoming")
+        b._show_conversation(a.username)
+        b.accept_button.invoke()
+        self.wait(lambda: a._chat_states.get(b.username) == "ready")
+        self.assertFalse(a.file_button.instate(["disabled"]))
+
+        with TemporaryDirectory() as folder:
+            selected = Path(folder, "ghi chú.txt")
+            selected.write_bytes(b"hello")
+            oversized = Path(folder, "qua-lon.bin")
+            with oversized.open("wb") as stream:
+                stream.truncate(100 * 1024 * 1024 + 1)
+            choices = [str(selected), "", str(oversized), str(selected.with_suffix(".missing"))]
+            with patch("tkinter.filedialog.askopenfilename", side_effect=choices):
+                a.file_button.invoke()
+                self.assertIn(selected.name, a.connection_notice_var.get())
+                self.assertIn("5 byte", a.connection_notice_var.get())
+                for _ in choices[1:]:
+                    a.file_button.invoke()
+                    self.assertEqual(a._file_drafts[b.username], selected)
+        a._show_conversation(c.username)
+        self.assertTrue(a.file_button.instate(["disabled"]))
+        self.assertNotIn(c.username, a._file_drafts)
+        self.assertEqual(b.chat_history[a.username], [])
+
+    def test_ui_send_accept_and_decline_files(self) -> None:
+        """Hai cửa sổ chọn, từ chối rồi nhận file thật sau khi chuyển hội thoại."""
+        a, b, c = self.apps
+        a._show_conversation(b.username)
+        a.invite_button.invoke()
+        self.wait(lambda: b._chat_states.get(a.username) == "incoming")
+        b._show_conversation(a.username)
+        b.accept_button.invoke()
+        self.wait(lambda: a._chat_states.get(b.username) == "ready")
+        b._show_conversation(c.username)
+        with TemporaryDirectory() as folder:
+            b.chat_network.downloads = Path(folder, "downloads")
+            path = Path(folder, "ảnh thử.bin")
+            path.write_bytes(bytes(range(256)) * 1500)
+            with patch("tkinter.filedialog.askopenfilename", return_value=str(path)):
+                for _ in range(2):
+                    a.file_button.invoke()
+                    a.send_file_button.invoke()
+            self.wait(lambda: len(b._file_offers.get(a.username, {})) == 2)
+            self.assertEqual(b.current_chat, c.username)
+            self.assertTrue(any("2 file chờ nhận" in s for s in b.conversation_list.get(0, "end")))
+            b._show_conversation(a.username)
+            b.message_var.set("Mình đang đọc")
+            b.decline_button.invoke()
+            b.accept_button.invoke()
+            self.wait(lambda: "100%" in b.history_text.get("1.0", "end"))
+            self.wait(lambda: "100%" in a.history_text.get("1.0", "end"))
+            self.assertIn("Đã từ chối", a.history_text.get("1.0", "end"))
+            self.assertEqual(list(b.chat_network.downloads.iterdir()), [b.chat_network.downloads / path.name])
+            self.assertEqual((b.chat_network.downloads / path.name).read_bytes(), path.read_bytes())
+            self.assertEqual(b.message_var.get(), "Mình đang đọc")
+            b.send_button.invoke()
+            self.wait(lambda: "Mình đang đọc" in a.history_text.get("1.0", "end"))
+
+    def test_ack_ui_matches_identical_messages_after_switch(self) -> None:
+        """ACK đến sớm hoặc muộn đều đánh dấu đúng tin sau khi đổi cuộc chat."""
+        a, b, c = self.apps
+        a._show_conversation(c.username)
+        first, second = "1" * 32, "2" * 32
+        a.post_network_event("ack_received", b.username, {"message_id": second})
+        for message_id in (first, second):
+            a.post_network_event("sent", b.username, {"message_id": message_id, "text": "OK"})
+        self.wait(lambda: len(a.chat_history.get(b.username, [])) == 2)
+        self.assertEqual(a.current_chat, c.username)
+        self.assertNotIn("Đã nhận", a.history_text.get("1.0", "end-1c"))
+
+        a._show_conversation(b.username)
+        _, first_row, second_row = a.history_text.get("1.0", "end-1c").split("OK")
+        self.assertNotIn("Đã nhận", first_row)
+        self.assertIn("Đã nhận", second_row)
+
+        a.post_network_event("ack_received", b.username, {"message_id": first})
+        self.wait(lambda: a.history_text.get("1.0", "end-1c").count("Đã nhận") == 2)
+        self.assertEqual(len(a.chat_history[b.username]), 2)
+
+    def test_leave_closes_only_current_chat_and_allows_reinvite(self) -> None:
+        """/leave đóng phiên đang chọn và cho phép mời lại."""
+        a, b, c = self.apps
+
+        def open_chat(sender: ChatWindow, recipient: ChatWindow) -> None:
+            """Mở hội thoại qua các nút thật của UI và chờ hai đầu ready."""
+            sender._show_conversation(recipient.username)
+            sender.invite_button.invoke()
+            self.wait(lambda: recipient._chat_states.get(sender.username) == "incoming")
+            recipient._show_conversation(sender.username)
+            recipient.accept_button.invoke()
+            self.wait(lambda: sender._chat_states.get(recipient.username)
+                      == recipient._chat_states.get(sender.username) == "ready")
+
+        open_chat(a, b)
+        a.message_var.set("Tin nhắn trước khi rời chat")
+        a.send_button.invoke()
+        self.wait(lambda: len(a.chat_history[b.username])
+                  == len(b.chat_history[a.username]) == 1)
+        history_a = list(a.chat_history[b.username])
+        history_b = list(b.chat_history[a.username])
+        socket_a = a.chat_network._links[b.username].connection
+        socket_b = b.chat_network._links[a.username].connection
+        open_chat(a, c)
+
+        a._show_conversation(b.username)
+        a.message_var.set("/leave")
+        a.send_button.invoke()
+        self.wait(lambda: a._chat_states.get(b.username)
+                  == b._chat_states.get(a.username) == "disconnected")
+        self.assertEqual(socket_a.fileno(), -1)
+        self.assertEqual(socket_b.fileno(), -1)
+        self.assertEqual(a.message_var.get(), "")
+        self.assertEqual(a.chat_history[b.username], history_a)
+        self.assertEqual(b.chat_history[a.username], history_b)
+        self.assertEqual(str(a.message_entry["state"]), "disabled")
+        self.assertTrue(a.invite_button.winfo_manager())
+        self.assertEqual(a.root.winfo_exists(), 1)
+        self.assertIsNotNone(a.tcp._listener)
+        a.discovery.stop.assert_not_called()
+
+        # Phiên khác vẫn chat được sau khi rời cuộc chat với Hoài.
+        a._show_conversation(c.username)
+        a.message_var.set("Vẫn chat với Minh")
+        a.send_button.invoke()
+        self.wait(lambda: bool(c.chat_history[a.username]))
+        self.assertEqual(c.chat_history[a.username][-1][1], "Vẫn chat với Minh")
+
+        # Có thể mời lại và dùng /leave qua handler của phím Enter.
+        open_chat(a, b)
+        a.message_var.set("  /leave  ")
+        self.assertEqual(a._on_send(), "break")
+        self.wait(lambda: a._chat_states.get(b.username)
+                  == b._chat_states.get(a.username) == "disconnected")
+        self.assertEqual(a.chat_history[b.username], history_a)
+        self.assertEqual(b.chat_history[a.username], history_b)
+
     def test_send_failure_restores_composer(self) -> None:
         """Gửi lỗi trả lại nội dung cho đúng hội thoại thay vì làm mất tin."""
         a, b, _ = self.apps
@@ -357,11 +671,11 @@ class ChatWindowTests(unittest.TestCase):
         b.accept_button.invoke()
         self.wait(lambda: a._chat_states.get(b.username) == b._chat_states.get(a.username) == "ready")
 
-        def fail_send(connection: socket.socket, text: str) -> None:
+        def fail_send(connection: socket.socket, packet: dict) -> None:
             """Mô phỏng đường TCP bị lỗi khi người dùng bấm Gửi."""
             raise OSError("Lỗi gửi thử nghiệm")
 
-        with patch("network.tcp.chat_session.send_message", fail_send):
+        with patch("network.tcp.chat_session.send_frame", fail_send):
             a.message_var.set("Tin nhắn không được mất")
             a.send_button.invoke()
             self.wait(lambda: a.message_var.get() == "Tin nhắn không được mất")

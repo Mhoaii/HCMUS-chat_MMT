@@ -12,6 +12,9 @@ python -B -m ui.app
 4. Phía nhận chọn mục **Lời mời** trong Cuộc chat gần đây, rồi **Đồng ý**
    hoặc **Từ chối**. Lời mời không tự đổi hội thoại đang mở.
 5. Khi đồng ý, hai bên nhập tin và bấm **Gửi** hoặc Enter.
+6. Gõ `/quit` rồi bấm **Gửi** hoặc Enter để rời cuộc chat đang mở.
+   Hai đầu đóng kết nối đó; cửa sổ, discovery, lịch sử và các cuộc chat khác
+   vẫn được giữ. Muốn trò chuyện lại thì gửi lời mời mới.
 
 Không cần bật TCP hay bấm accept kỹ thuật. Listener và vòng accept tự chạy
 khi bấm Bắt đầu. Một socket sau khi được đồng ý dùng cho cả hai chiều.

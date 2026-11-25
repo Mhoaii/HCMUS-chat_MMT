@@ -112,6 +112,10 @@ Khi triển khai:
 
 ## 8. Nguyên tắc kiểm thử
 
+Tôi tự viết và chỉnh sửa mã nguồn ứng dụng. Khi cần thay đổi các file dự án chính, hãy giải thích và đưa đoạn code trong chat để tôi tự áp dụng.
+
+Bạn được chủ động tạo, sửa và chạy các hàm hoặc file kiểm thử trong `tests/` mà không cần hỏi lại. Khi test phát hiện lỗi hoặc chức năng còn thiếu, hãy báo kết quả thực tế, chỉ rõ vị trí trong mã nguồn và hướng dẫn tôi sửa.
+
 Sau mỗi phần phải có cách kiểm thử tương ứng.
 
 Cần phân biệt:

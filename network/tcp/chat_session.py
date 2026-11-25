@@ -1,16 +1,20 @@
 """Lời mời và chat của UI; tái sử dụng TCP newline của bản console."""
 
-import json
 import queue
 import socket
 import threading
 import time
 import uuid
+
+from pathlib import Path
+
+from network.tcp.file_transfer import build_file_offer, read_file_offer, receive_file_bytes, send_file_bytes
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from models.peer import LocalProfile, Peer
-from network.tcp.tcp_chat import connect_peer, receive_messages, send_message
+from network.tcp.framing import recv_frame, send_frame
+from network.tcp.tcp_chat import connect_peer
 from network.tcp.tcp_service import TCPChatService
 
 PROTOCOL = "lan-chat-ui/1"
@@ -31,7 +35,13 @@ class _ChatConnection:
     connection: socket.socket | None = None
     deadline: float = 0
     outbox: queue.Queue = field(default_factory=queue.Queue)
+    outgoing_files: dict[str, tuple[Path, dict]] = field(default_factory=dict)
+    incoming_files: dict[str, dict] = field(default_factory=dict)
+    accepted_files: dict[str, dict] = field(default_factory=dict)
+    data_sockets: set[socket.socket] = field(default_factory=set)
+    pending_ack_ids: set[str] = field(default_factory=set)
     closed: threading.Event = field(default_factory=threading.Event)
+    duplicate: "_ChatConnection | None" = None
 
 
 class ChatSessionService:
@@ -45,14 +55,17 @@ class ChatSessionService:
         *,
         invite_timeout: float = 30,
         handshake_timeout: float = 5,
+        downloads: Path = Path("downloads"),
     ) -> None:
         """Nhận listener đã mở và callback sự kiện; timeout tính bằng giây."""
         self.profile = profile
+        self.downloads = downloads
         self.listener = listener
         self.emit = emit
         self.invite_timeout = invite_timeout
         self.handshake_timeout = handshake_timeout
         self._lock = threading.RLock()
+        self._invites_changed = threading.Condition(self._lock)
         self._stop = threading.Event()
         self._links: dict[str, _ChatConnection] = {}
         self._sockets: set[socket.socket] = set()
@@ -163,48 +176,100 @@ class ChatSessionService:
             self._expire_invitations()
 
     def _read_loop(self, link: _ChatConnection) -> None:
-        """Mỗi socket có đúng một reader; lỗi giao thức đóng riêng socket đó."""
+        """Đọc từng frame trên socket của phiên và thu hồi phiên khi kết thúc."""
         reason = "Cuộc trò chuyện đã ngắt kết nối."
         try:
-            receive_messages(
-                link.connection,
-                lambda text: self._handle_packet(link, text),
-                lambda: None,
-            )
+            while not self._stop.is_set() and not link.closed.is_set():
+                packet = recv_frame(link.connection)
+                if not link.username and packet.get("type") == "file.open":
+                    self._receive_transfer(link, packet)
+                    return
+                self._handle_packet(link, packet)
+        except EOFError:
+            pass
+        except OSError as error:
+            reason = f"Lỗi kết nối TCP: {error}"
         except (ValueError, TypeError) as error:
             reason = f"Dữ liệu chat không hợp lệ: {error}"
         finally:
             self._drop(link, reason)
 
-    def _handle_packet(self, link: _ChatConnection, text: str) -> None:
-        """Đọc JSON phân loại; nội dung chat không được coi là lệnh điều khiển."""
-        if len(text.encode("utf-8")) > 100_000:
-            raise ValueError("Gói tin quá lớn.")
-        packet = json.loads(text)
-        if not isinstance(packet, dict) or packet.get("protocol") != PROTOCOL:
+    def _handle_packet(self, link: _ChatConnection, packet: dict) -> None:
+        """Kiểm tra giao thức và xử lý bản tin theo trạng thái của phiên."""
+        if packet.get("protocol") != PROTOCOL:
             raise ValueError("Khác giao thức chat UI.")
+
+         # 2. Nếu là kết nối mới chưa định danh -> Xử lý lời mời "request"
         if not link.username:
             self._register_request(link, packet)
             return
         with self._lock:
             if self._links.get(link.username) is not link or link.closed.is_set():
                 return
+
             if packet.get("request_id") != link.request_id:
                 raise ValueError("Sai mã cuộc trò chuyện.")
+
             kind = packet.get("type")
+
+            if kind in ("message", "ack"):
+                message_id = packet.get("message_id")
+                if not isinstance(message_id, str) or len(message_id) != 32:
+                    raise ValueError("Bản tin thiếu message_id hợp lệ.")
+                if uuid.UUID(hex=message_id).hex != message_id:
+                    raise ValueError("message_id sai định dạng.")
+
             if kind == "accept" and link.state == "waiting":
                 if packet.get("username") != link.username:
                     raise ValueError("Sai người nhận lời mời.")
+                self._close_duplicate(link)
                 link.state, link.deadline = "ready", 0
                 self._emit_state(link)
+
             elif kind == "decline" and link.state == "waiting":
                 self._drop(link, "Người nhận đã từ chối lời mời.", state="declined")
             elif kind == "message" and link.state in ("ready", "accepting"):
                 message = packet.get("text")
                 self._validate_text(message)
                 self.emit("message", link.username, {"text": message})
-            else:
-                raise ValueError("Gói tin không phù hợp trạng thái hội thoại.")
+
+                # B đã tiếp nhận tin. Writer sẽ gửi ACK về A trên cùng socket.
+                link.outbox.put({"type": "ack", "message_id": message_id})
+
+            elif kind == "file.offer":
+                if link.state not in ("ready", "accepting"):
+                    raise ValueError("Phiên chưa được đồng ý chat.")
+                offer = read_file_offer(packet)
+                if offer["transfer_id"] in link.incoming_files or offer["transfer_id"] in link.accepted_files:
+                    raise ValueError("Mã lời mời file bị trùng.")
+                link.incoming_files[offer["transfer_id"]] = offer
+                self.emit("file_offer", link.username, offer)
+
+            elif kind == "file.reply" and link.state == "ready":
+                transfer_id = packet.get("transfer_id")
+                accepted = packet.get("accepted")
+                if not isinstance(transfer_id, str) or type(accepted) is not bool:
+                    raise ValueError("Phản hồi file không hợp lệ.")
+
+                pending = link.outgoing_files.pop(transfer_id, None)
+                if pending is None:
+                    return
+                path, offer = pending
+
+                self.emit("file_reply", link.username, {
+                    "transfer_id": transfer_id,
+                    "name": path.name,
+                    "accepted": accepted,
+                })
+                if accepted:
+                    self._spawn(self._send_transfer, link, path, offer)
+
+            elif kind == "ack" and link.state == "ready":
+                if message_id not in link.pending_ack_ids:
+                    return
+
+                link.pending_ack_ids.remove(message_id)
+                self.emit("ack_received", link.username, {"message_id": message_id})
 
     def _register_request(self, link: _ChatConnection, packet: dict) -> None:
         """Lấy danh tính từ lời mời; không suy đoán username bằng IP/cổng nguồn."""
@@ -232,30 +297,52 @@ class ChatSessionService:
                 "connecting", "waiting",
             )
             if previous is not None:
-                # Hai bên cùng mời: giữ socket do username nhỏ hơn khởi tạo.
-                # Cả hai đã bày tỏ muốn chat nên tự xác nhận socket được giữ.
-                if not reciprocal or previous.initiator < link.initiator:
+                if not reciprocal or previous.duplicate is not None:
                     self._drop(link, notify=False)
                     return
+
+                if previous.initiator < link.initiator:
+                    # Giữ phiên đi của mình. Chờ bên kia xác nhận
+                    # trước khi thu hồi socket của lời mời đi ngược lại.
+                    previous.duplicate = link
+                    link.connection.settimeout(None)
+                    return
+
+                # Phiên đến là phiên cả hai sẽ giữ.
                 self._drop(previous, notify=False)
+
             self._links[username] = link
             link.connection.settimeout(None)
             link.deadline = time.monotonic() + self.invite_timeout
             link.state = "accepting" if reciprocal else "incoming"
+            self._invites_changed.notify_all()
             self._spawn(self._write_loop, link)
             if reciprocal:
                 link.outbox.put({"type": "accept", "username": self.profile.username})
             self._emit_state(link)
 
-    def accept_chat(self, username: str) -> None:
-        """Đồng ý lời mời; writer gửi phản hồi trước khi cho gửi tin."""
+    def wait_for_invitation(self) -> str:
+        """Chờ một lời mời cho lệnh /accept trống và trả username đang mời."""
+        with self._invites_changed:
+            while not self._stop.is_set():
+                pending = [u for u, link in self._links.items() if link.state == "incoming"]
+                if len(pending) == 1:
+                    return pending[0]
+                if pending:
+                    raise ValueError("Hãy chọn /accept username: " + ", ".join(pending))
+                self._invites_changed.wait()
+            raise RuntimeError("Dịch vụ chat đã dừng.")
+
+    def accept_chat(self, username: str) -> bool:
+        """Trả True khi đã xếp phản hồi đồng ý lời mời của username."""
         with self._lock:
             link = self._links.get(username)
             if link is None or link.state != "incoming":
-                return
+                return False
             link.state = "accepting"
             self._emit_state(link)
             link.outbox.put({"type": "accept", "username": self.profile.username})
+            return True
 
     def decline_chat(self, username: str) -> None:
         """Gửi từ chối qua writer rồi đóng kết nối chờ."""
@@ -266,6 +353,13 @@ class ChatSessionService:
             link.state = "declining"
             self._emit_state(link)
             link.outbox.put({"type": "decline"})
+
+    def leave_chat(self, username: str) -> None:
+        """Rời một cuộc chat, đóng socket của nó và giữ các phiên khác."""
+        with self._lock:
+            link = self._links.get(username)
+            if link is not None:
+                self._drop(link, "Bạn đã rời cuộc trò chuyện.")
 
     @staticmethod
     def _validate_text(text: str) -> None:
@@ -282,7 +376,121 @@ class ChatSessionService:
             link = self._links.get(username)
             if link is None or link.state != "ready":
                 raise RuntimeError("Cuộc trò chuyện chưa sẵn sàng.")
-            link.outbox.put({"type": "message", "text": text})
+            message_id = uuid.uuid4().hex
+            link.pending_ack_ids.add(message_id)
+            link.outbox.put({
+                "type": "message",
+                "message_id": message_id,
+                "text": text,
+            })
+
+    def offer_file(self, username: str, path: Path, *, background: bool = False) -> None:
+        """Tạo lời mời từ path và xếp vào phiên của username nếu phiên còn sẵn sàng."""
+        with self._lock:
+            link = self._links.get(username)
+            if link is None or link.state != "ready":
+                raise RuntimeError("Hãy mở cuộc chat trước khi gửi lời mời.")
+            if background:
+                self._spawn(self._prepare_file_offer, link, path)
+                return
+        self._queue_file_offer(link, path)
+
+    def _prepare_file_offer(self, link: _ChatConnection, path: Path) -> None:
+        """Tính hash ngoài luồng Tk, chuyển lỗi về đúng hội thoại."""
+        try:
+            self._queue_file_offer(link, path)
+        except (OSError, RuntimeError, ValueError) as error:
+            self.emit("file_prepare_error", link.username, {"path": str(path), "reason": str(error)})
+
+    def _queue_file_offer(self, link: _ChatConnection, path: Path) -> None:
+        """Chỉ chuyển lời mời vào đúng phiên đã chọn trước khi đọc file."""
+        # Đọc đĩa ngoài khóa để reader và writer vẫn xử lý được tin nhắn.
+        offer = build_file_offer(path)
+        with self._lock:
+            if self._links.get(link.username) is not link or link.state != "ready":
+                raise RuntimeError("Phiên đã thay đổi trong lúc đọc file.")
+            link.outgoing_files[offer["transfer_id"]] = (path, offer)
+            self.emit("file_offered", link.username, offer)
+            link.outbox.put({"type": "file.offer", **offer})
+
+    def reply_file(self, username: str, transfer_id: str, accepted: bool) -> None:
+        """Xếp phản hồi cho một lời mời còn chờ trong phiên với username."""
+        with self._lock:
+            link = self._links.get(username)
+            if link is None or link.state != "ready":
+                raise RuntimeError("Cuộc chat chưa sẵn sàng.")
+            if transfer_id not in link.incoming_files:
+                raise ValueError("Mã lời mời không tồn tại hoặc đã được trả lời.")
+
+            offer = link.incoming_files.pop(transfer_id)
+            if accepted:
+                link.accepted_files[transfer_id] = offer
+            link.outbox.put({
+                "type": "file.reply",
+                "transfer_id": transfer_id,
+                "accepted": accepted,
+            })
+
+    def _progress_callback(self, username: str, offer: dict) -> Callable[[int], None]:
+        """Chỉ báo khi phần trăm thay đổi. Mốc 100 dành cho file đã lưu."""
+        previous = -1
+        def report(count: int) -> None:
+            nonlocal previous
+            percent = min(99, count * 100 // max(1, offer["size"]))
+            if percent != previous:
+                previous = percent
+                self.emit("file_progress", username, dict(offer, percent=percent))
+        return report
+
+    def _send_transfer(self, link: _ChatConnection, path: Path, offer: dict) -> None:
+        """Mở socket dữ liệu, gửi byte rồi đợi máy nhận xác nhận đã lưu."""
+        transfer_id = offer["transfer_id"]
+        try:
+            with connect_peer(link.ip, link.tcp_port) as connection:
+                with self._lock:
+                    if link.closed.is_set() or self._stop.is_set():
+                        return
+                    link.data_sockets.add(connection)
+                try:
+                    connection.settimeout(30)
+                    send_frame(connection, {"type": "file.open", "protocol": PROTOCOL,
+                               "request_id": link.request_id, "username": self.profile.username,
+                               "transfer_id": transfer_id})
+                    send_file_bytes(connection, path, offer["size"], self._progress_callback(link.username, offer))
+                    send_frame(connection, {"type": "file.end", "transfer_id": transfer_id})
+                    result = recv_frame(connection)
+                    if result != {"type": "file.saved", "transfer_id": transfer_id}:
+                        raise ValueError("Bên nhận chưa xác nhận đã lưu file.")
+                    self.emit("file_sent", link.username, offer)
+                finally:
+                    with self._lock:
+                        link.data_sockets.discard(connection)
+        except (OSError, ValueError, EOFError) as error:
+            self.emit("file_error", link.username, dict(offer, reason=str(error)))
+
+    def _receive_transfer(self, data_link: _ChatConnection, packet: dict) -> None:
+        """Nhận trên worker riêng khi socket khớp phiên chat và lời mời đã đồng ý."""
+        connection = data_link.connection
+        with self._lock:
+            link = self._links.get(packet.get("username"))
+            if (link is None or link.state != "ready" or link.ip != data_link.ip
+                    or packet.get("protocol") != PROTOCOL or packet.get("request_id") != link.request_id):
+                raise ValueError("Socket file không thuộc phiên chat.")
+            offer = link.accepted_files.pop(packet.get("transfer_id"), None)
+            if offer is None:
+                raise ValueError("Chưa đồng ý nhận file này.")
+            link.data_sockets.add(connection)
+        try:
+            connection.settimeout(30)
+            saved = receive_file_bytes(connection, offer, self.downloads,
+                                       self._progress_callback(link.username, offer))
+            self.emit("file_received", link.username, dict(offer, path=str(saved)))
+            send_frame(connection, {"type": "file.saved", "transfer_id": offer["transfer_id"]})
+        except (OSError, EOFError, ValueError) as error:
+            self.emit("file_error", link.username, dict(offer, reason=str(error)))
+        finally:
+            with self._lock:
+                link.data_sockets.discard(connection)
 
     def _write_loop(self, link: _ChatConnection) -> None:
         """Một writer cho mỗi socket để phản hồi và tin nhắn không xen byte."""
@@ -292,8 +500,8 @@ class ChatSessionService:
                 return
             packet = dict(packet, protocol=PROTOCOL, request_id=link.request_id)
             try:
-                send_message(link.connection, json.dumps(packet, ensure_ascii=False))
-            except OSError as error:
+                send_frame(link.connection, packet)
+            except (OSError, ValueError, TypeError) as error:
                 with self._lock:
                     if packet["type"] == "message" and not self._stop.is_set():
                         self.emit("send_failed", link.username, {
@@ -305,7 +513,10 @@ class ChatSessionService:
                 # sendall có thể vừa xong thì reader nhận EOF. Vẫn ghi nhận
                 # thao tác gửi đã hoàn tất, không làm mất tin khỏi lịch sử local.
                 if packet["type"] == "message" and not self._stop.is_set():
-                    self.emit("sent", link.username, {"text": packet["text"]})
+                    self.emit("sent", link.username, {
+                        "text": packet["text"],
+                        "message_id": packet["message_id"],
+                    })
                 if self._links.get(link.username) is not link or link.closed.is_set():
                     return
                 if packet["type"] == "accept":
@@ -323,6 +534,14 @@ class ChatSessionService:
                 if link.deadline and now >= link.deadline:
                     self._drop(link, "Lời mời đã hết thời gian chờ.", state="expired")
 
+    def _close_duplicate(self, link: _ChatConnection) -> None:
+        """Thu hồi socket dư của hai lời mời chéo nhau."""
+        duplicate = link.duplicate
+        link.duplicate = None
+
+        if duplicate is not None:
+            self._drop(duplicate, notify=False)
+
     def _drop(
         self, link: _ChatConnection, reason: str = "", *,
         state: str = "disconnected", notify: bool = True,
@@ -332,6 +551,14 @@ class ChatSessionService:
             if link.closed.is_set():
                 return
             link.closed.set()
+            self._close_duplicate(link)
+            for data_socket in link.data_sockets:
+                try:
+                    data_socket.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                data_socket.close()
+            link.data_sockets.clear()
             current = self._links.get(link.username) is link
             if current:
                 del self._links[link.username]
@@ -356,10 +583,14 @@ class ChatSessionService:
                     pass
                 link.connection.close()
 
+            link.closed.set()
+            link.pending_ack_ids.clear()
+
     def stop(self) -> None:
         """Dừng listener, đánh thức reader/writer và join worker có giới hạn."""
         with self._lock:
             self._stop.set()
+            self._invites_changed.notify_all()
             self.listener.stop()
             for link in list(self._links.values()):
                 self._drop(link, notify=False)
