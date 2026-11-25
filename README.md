@@ -1,20 +1,74 @@
 # LAN Chat — UDP discovery và TCP chat
 
-Đã nối chat text vào backend và giao diện. Hướng dẫn chi tiết: [TCP_CHAT.md](TCP_CHAT.md).
+Ứng dụng chat P2P dùng socket TCP/UDP, có terminal và GUI Tkinter.
+UDP phát hiện peer và trạng thái. TCP xử lý lời mời, tin nhắn, ACK và truyền file.
+
+## Cài đặt và chạy
+
+Cần Python 3.10 trở lên, có Tkinter. Terminal dùng `prompt_toolkit` để giữ
+dòng đang gõ khi nhận tin và thông báo nền. Cài dependency trước khi chạy:
 
 ```powershell
-python main.py --gui
-# Hoặc console, mỗi instance dùng username và TCP port riêng:
-python main.py --username nnah --name nnah --job Test --port 5001
-python main.py --username oithoinao --name oithoinao --job Test --port 6000
+py -m pip install -r requirements.txt
+```
+Trên Windows có thể kiểm tra Tkinter bằng `py -m tkinter`.
+Chạy các lệnh dưới đây từ thư mục gốc dự án.
+
+```powershell
+# GUI
+py -B -m ui.app
+# Terminal
+py -B main.py
 ```
 
-Console: chờ discovery, `/list`, `/chat username`, nhập tin để gửi, `/quit` để thoát.
-Chạy `python -m ui --demo` nếu chỉ muốn xem UI mẫu không có mạng.
-Chat hiện cần hai peer cùng chạy; ACK là ứng dụng bên kia đã nhận, chưa phải đã xem.
-Truyền file thật và lưu lịch sử xuống đĩa chưa được triển khai.
+Mở hai instance với username khác nhau. Chương trình tự xin cổng TCP trống
+và quảng bá cổng thực qua UDP. Hai máy cần cùng LAN/Wi-Fi và cho phép Python
+nhận kết nối qua firewall. Với GUI, nhập hồ sơ rồi bấm Bắt đầu.
 
-Kiểm thử: `python -B -m unittest discover -s tests -v`.
+## Dùng terminal
+
+- Nhập hồ sơ khi chạy `main.py`, chờ discovery rồi dùng `/list`.
+- Dùng `/chat 1` hoặc `/chat username` để gửi lời mời. Số thứ tự thuộc lần `/list` gần nhất.
+- Phía nhận dùng `/accept username` hoặc `/decline username`.
+- Khi đã đồng ý chat, nhập văn bản rồi Enter để gửi.
+- `/chats` xem các hội thoại và số tin chưa đọc. Dùng `/chat username` để
+  chuyển về phiên đang mở, đọc lại lịch sử và xóa bộ đếm chưa đọc.
+- Tin từ người khác được lưu trong RAM và thông báo số chưa đọc.
+  Khi phiên hiện tại ngắt kết nối, terminal trở về prompt chính.
+- `/accept` không kèm tên chọn lời mời đầu tiên đang chờ. Nếu chưa có,
+  chương trình thông báo và tiếp tục nhận lệnh.
+- Dùng `/send "C:\duong dan\file.pdf"` để gửi lời mời file.
+- Phía nhận dùng `/acceptfile <mã>` hoặc `/declinefile <mã>` trong cuộc chat với người gửi.
+- Dùng `/status online` hoặc `/status away` để đổi trạng thái.
+- `/leave` rời cuộc chat; `/quit` thoát ứng dụng; `/help` xem cú pháp đầy đủ.
+
+## Chat và file trong GUI
+
+Chọn người trong danh sách và gửi lời mời chat. Phía nhận đồng ý trong cửa sổ.
+Trong phiên chat, chọn file và gửi; phía nhận đồng ý hoặc từ chối lời mời file.
+Tiến độ và kết quả được cập nhật trong hội thoại. Xem [hướng dẫn UI](docs/UI_CHAT.md).
+
+File nhận được lưu trong `downloads/` tại thư mục chạy ứng dụng, giới hạn
+100 MiB/file. File được kiểm tra SHA-256 trước khi công bố, tự đổi tên khi trùng.
+Chat tiếp tục hoạt động trong lúc truyền file qua kết nối dữ liệu riêng.
+Hai đầu cần cùng phiên bản giao thức framing hiện tại.
+Lịch sử chat nằm trong RAM. ACK xác nhận ứng dụng bên kia tiếp nhận tin.
+
+## Kiểm thử
+
+```powershell
+py -X utf8 -B -m unittest discover -s tests -v
+```
+
+Test tự động bao phủ UDP, framing, phiên chat, ACK, truyền file, terminal và UI.
+Test UI cần môi trường có màn hình/Tkinter. Khi demo trên hai máy, kiểm tra thêm
+discovery, đổi trạng thái, chat hai chiều, gửi file trong lúc chat và ngắt kết nối.
+
+Để kiểm tra terminal nhiều peer, mở ba instance A, B, C. Cho A chat với B
+và C, sau đó chọn B tại A. C gửi hai tin cho A. A phải thấy thông báo
+hai tin chưa đọc, `/chats` hiển thị đúng số đếm và `/chat C` phát lại tin.
+Gõ dở một dòng tại A rồi gửi tin từ C để kiểm tra dòng nhập được giữ nguyên.
+Đóng C trong khi A đang chọn C để kiểm tra prompt trở về `> `.
 
 ## Cấu trúc mô-đun discovery
 

@@ -151,6 +151,57 @@ class ChatSessionTests(unittest.TestCase):
             self.assertEqual(offer["size"], len(content))
             self.assertEqual(offer["sha256"], hashlib.sha256(content).hexdigest())
 
+    def test_terminal_three_peers_switch_unread_and_disconnect(self) -> None:
+        """Callback TCP thật lưu tin nền, chuyển phiên cũ và trả prompt khi đóng."""
+        import io
+        from contextlib import redirect_stdout
+        from unittest.mock import Mock
+        from console_state import ConsoleState
+        from main import run_console, show_chat_event
+
+        c = self.make_service("c")
+        state = ConsoleState(show_chat_event)
+
+        def emit(*event):
+            """Giữ hàng sự kiện của test đồng thời cập nhật terminal."""
+            state.on_event(*event)
+            self.events["a"].put(event)
+
+        self.a.emit = emit
+        discovery = Mock()
+        with redirect_stdout(io.StringIO()) as output:
+            self.accept_pair(self.a, self.b)
+            self.accept_pair(self.a, c)
+            original_b = self.a._links["b"]
+            original_c = self.a._links["c"]
+
+            def commands():
+                """Phát tin qua socket giữa các lần nhập lệnh."""
+                yield "/chat b"
+                c.send_text("a", "tin nền 1")
+                self.wait_event("a", "message")
+                c.send_text("a", "tin nền 2")
+                self.wait_event("a", "message")
+                yield "/chats"
+                yield "/chat c"
+                self.assertIs(self.a._links["b"], original_b)
+                self.assertIs(self.a._links["c"], original_c)
+                yield "đã nhận đủ"
+                self.assertEqual(self.wait_event("c", "message")[2]["text"], "đã nhận đủ")
+                c.leave_chat("a")
+                self.wait(lambda: state.current == "")
+                yield "/chats"
+                yield "/quit"
+
+            with patch("builtins.input", side_effect=commands()):
+                run_console(discovery, self.a, state)
+        discovery.get_peer.assert_not_called()
+        self.assertIn("c | ready | 2 tin chưa đọc", output.getvalue())
+        self.assertIn("c: tin nền 1", output.getvalue())
+        self.assertIn("c: tin nền 2", output.getvalue())
+        self.assertIn("c | disconnected | 0 tin chưa đọc", output.getvalue())
+        self.assertEqual(state.prompt(), "> ")
+
     def test_file_reply_matches_pending_offer(self) -> None:
         """Hai lời mời cùng tên được trả lời ngược thứ tự, mỗi mã chỉ dùng một lần."""
         self.accept_pair(self.a, self.b)
