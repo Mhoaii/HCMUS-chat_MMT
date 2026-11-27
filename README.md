@@ -1,25 +1,40 @@
 # LAN Chat — UDP discovery và TCP chat
 
-Đã nối chat text vào backend và giao diện. Hướng dẫn chi tiết: [TCP_CHAT.md](TCP_CHAT.md).
+Đã nối chat text vào backend và giao diện Tkinter (hỗ trợ **Light/Dark Mode**, tự căn giữa màn hình và đồng bộ viền cửa sổ Windows).  
+Hướng dẫn chi tiết: [docs/UI_CHAT.md](docs/UI_CHAT.md) · [docs/TCP_CHAT.md](docs/TCP_CHAT.md).
+
+## Cách khởi động ứng dụng
+
+Chạy từ thư mục gốc dự án (dùng `py` trên Windows, hoặc `python` nếu đã gắn PATH):
 
 ```powershell
-python main.py --gui
-# Hoặc console, mỗi instance dùng username và TCP port riêng:
-python main.py --username nnah --name nnah --job Test --port 5001
-python main.py --username oithoinao --name oithoinao --job Test --port 6000
+# 1. Khởi động giao diện desktop Tkinter (khuyên dùng)
+py -B -m ui.app
+
+# 2. Hoặc chạy bản console (nhập username, tên hiển thị, chức danh bằng bàn phím)
+py -B main.py
 ```
 
-Console: chờ discovery, `/list`, `/chat username`, nhập tin để gửi, `/quit` để thoát.
-Chạy `python -m ui --demo` nếu chỉ muốn xem UI mẫu không có mạng.
-Chat hiện cần hai peer cùng chạy; ACK là ứng dụng bên kia đã nhận, chưa phải đã xem.
-Truyền file thật và lưu lịch sử xuống đĩa chưa được triển khai.
+- **Giao diện (UI):** Mở 2 cửa sổ bằng `py -B -m ui.app` với 2 username khác nhau để thử trên cùng 1 máy (hoặc trên 2 máy cùng mạng LAN). Hỗ trợ nút chuyển **Chế độ tối / Chế độ sáng**, chọn trạng thái `online` / `away`, gửi **Mời trò chuyện** → **Đồng ý / Từ chối** rồi nhắn tin hai chiều.
+- **Console (`main.py`):** Nhập hồ sơ qua `input()`, chờ discovery rồi dùng các lệnh: `/list`, `/status online`, `/status away`, `/accept`, `/chat <username>`, `/quit`.
+- **Trạng thái hiện tại:** Chat cần hai peer cùng chạy trong mạng LAN; sự kiện `sent` ở UI xác nhận `sendall` hoàn tất (chưa có ACK từ ứng dụng nhận). Truyền file thật và lưu lịch sử xuống đĩa chưa được triển khai.
 
-Kiểm thử: `python -B -m unittest discover -s tests -v`.
+## Kiểm thử
 
-## Cấu trúc mô-đun discovery
+Chạy từng bộ kiểm thử đang hoạt động (từ thư mục gốc dự án):
 
-Thư mục `network/udp` chứa phần phát hiện peer bằng UDP.
-Bộ điều phối và các thành phần hỗ trợ nằm trực tiếp trong thư mục này.
+```powershell
+# Kiểm thử phiên chat TCP và giao diện Tkinter
+py -X utf8 -B -m unittest discover -s tests -p test_chat_session.py -v
+
+# Kiểm thử các thành phần UDP Discovery
+py -X utf8 -B -m unittest discover -s tests -p test_presence_protocol.py -v
+py -X utf8 -B -m unittest discover -s tests -p test_peer_registry.py -v
+```
+
+## Cấu trúc mô-đun
+
+Thư mục `network/udp` chứa phần phát hiện peer bằng UDP, `network/tcp` chứa kết nối chat TCP, và `ui` chứa giao diện Tkinter.
 
 ```text
 network/
@@ -30,6 +45,12 @@ network/
 │   ├── presence_protocol.py # Mã hóa/kiểm tra HELLO JSON UTF-8
 │   └── peer_registry.py     # Lưu, tra cứu và loại peer hết hạn bằng Lock
 └── tcp/
+    ├── tcp_chat.py          # Kết nối, gửi/nhận UTF-8 newline và bản console
+    ├── tcp_service.py       # Listener TCP lắng nghe kết nối đến
+    └── chat_session.py      # Quản lý lời mời, timeout và reader/writer cho UI
+ui/
+├── app.py                   # Cửa sổ chat Tkinter (ChatWindow) và cầu nối sự kiện mạng
+└── theme.py                 # Hệ thống màu Light/Dark Mode, ttk.Style, icon và viền Windows
 ```
 
 Console và giao diện chỉ cần import service:
@@ -47,13 +68,6 @@ Cách chia này áp dụng nguyên tắc một trách nhiệm (SRP) và kết h�
 tượng có sẵn. Không thêm lớp cơ sở hay kế thừa khi chưa có nhu cầu thay thế
 thành phần. API service và định dạng gói HELLO giữ nguyên. Import trực tiếp
 từ file mô-đun nên không cần `__init__.py`.
-
-Chạy riêng các unit test hiện có của UDP:
-
-```powershell
-python -X utf8 -B -m unittest discover -s tests -p test_presence_protocol.py -v
-python -X utf8 -B -m unittest discover -s tests -p test_peer_registry.py -v
-```
 
 <!-- Khi nhận được thông tin của Minh, chương trình sẽ lưu ở đâu? Làm sao biết Minh là người mới, đã tồn tại, hay đã offline? Và người làm TCP sẽ lấy thông tin của Minh bằng cách nào? -->
 
