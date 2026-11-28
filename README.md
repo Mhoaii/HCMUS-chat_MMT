@@ -3,6 +3,8 @@
 Đã nối chat text vào backend và giao diện Tkinter (hỗ trợ **Light/Dark Mode**, tự căn giữa màn hình và đồng bộ viền cửa sổ Windows).  
 Hướng dẫn chi tiết: [docs/UI_CHAT.md](docs/UI_CHAT.md) · [docs/TCP_CHAT.md](docs/TCP_CHAT.md) (tài liệu bản TCP cũ).
 
+Để xem luồng từ lúc tìm người qua UDP đến khi nhận file qua TCP, mở [sơ đồ Archify](docs/archify/lan-chat-main.html) bằng trình duyệt sau khi tải repo. Bạn có thể chỉnh sơ đồ trong [file nguồn JSON](docs/archify/lan-chat-main.sequence.json).
+
 ## Cách khởi động ứng dụng
 
 Chạy từ thư mục gốc dự án (dùng `py` trên Windows, hoặc `python` nếu đã gắn PATH):

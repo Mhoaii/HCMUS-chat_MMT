@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "LAN Chat trên main · Từ tìm người đến nhận file",
+    "output": "lan-chat-main.html",
+    "viewBox": [
+      1060,
+      680
+    ],
+    "column_fit": "spread",
+    "animation": "trace"
+  },
+  "participants": [
+    {
+      "id": "guiA",
+      "type": "frontend",
+      "label": "Hoàng",
+      "sublabel": "Cửa sổ gửi"
+    },
+    {
+      "id": "netA",
+      "type": "backend",
+      "label": "Peer A",
+      "sublabel": "Dịch vụ mạng"
+    },
+    {
+      "id": "netB",
+      "type": "backend",
+      "label": "Peer B",
+      "sublabel": "Dịch vụ mạng"
+    },
+    {
+      "id": "guiB",
+      "type": "frontend",
+      "label": "Hoài",
+      "sublabel": "Cửa sổ nhận"
+    },
+    {
+      "id": "disk",
+      "type": "database",
+      "label": "downloads/",
+      "sublabel": "Máy của Hoài"
+    }
+  ],
+  "segments": [
+    {
+      "from": 146,
+      "to": 201,
+      "label": "Khám phá qua UDP"
+    },
+    {
+      "from": 207,
+      "to": 314,
+      "label": "Lời mời TCP"
+    },
+    {
+      "from": 320,
+      "to": 371,
+      "label": "Tin nhắn và ACK"
+    },
+    {
+      "from": 376,
+      "to": 606,
+      "label": "Gửi và nhận file"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m1",
+      "from": "netB",
+      "to": "netA",
+      "y": 160,
+      "label": "HELLO · UDP 1717",
+      "variant": "default"
+    },
+    {
+      "id": "m2",
+      "from": "netA",
+      "to": "guiA",
+      "y": 188,
+      "label": "Hoài xuất hiện",
+      "variant": "default"
+    },
+    {
+      "id": "m3",
+      "from": "guiA",
+      "to": "netA",
+      "y": 216,
+      "label": "Mời trò chuyện",
+      "variant": "default"
+    },
+    {
+      "id": "m4",
+      "from": "netA",
+      "to": "netB",
+      "y": 245,
+      "label": "TCP · request",
+      "variant": "default"
+    },
+    {
+      "id": "m6",
+      "from": "guiB",
+      "to": "netB",
+      "y": 273,
+      "label": "Đồng ý",
+      "variant": "return"
+    },
+    {
+      "id": "m7",
+      "from": "netB",
+      "to": "netA",
+      "y": 301,
+      "label": "accept · sẵn sàng",
+      "variant": "return"
+    },
+    {
+      "id": "m8",
+      "from": "netA",
+      "to": "netB",
+      "y": 329,
+      "label": "message + message_id",
+      "variant": "default"
+    },
+    {
+      "id": "m9",
+      "from": "netB",
+      "to": "netA",
+      "y": 357,
+      "label": "ack cùng mã",
+      "variant": "return"
+    },
+    {
+      "id": "choose",
+      "from": "guiA",
+      "to": "netA",
+      "y": 386,
+      "label": "Chọn file",
+      "variant": "default"
+    },
+    {
+      "id": "m10",
+      "from": "netA",
+      "to": "netB",
+      "y": 414,
+      "label": "file.offer",
+      "variant": "default"
+    },
+    {
+      "id": "m12",
+      "from": "guiB",
+      "to": "netB",
+      "y": 442,
+      "label": "Đồng ý nhận",
+      "variant": "default"
+    },
+    {
+      "id": "m13",
+      "from": "netB",
+      "to": "netA",
+      "y": 470,
+      "label": "file.reply",
+      "variant": "return"
+    },
+    {
+      "id": "m14",
+      "from": "netA",
+      "to": "netB",
+      "y": 498,
+      "label": "TCP riêng · file.open",
+      "variant": "default"
+    },
+    {
+      "id": "m15",
+      "from": "netA",
+      "to": "netB",
+      "y": 527,
+      "label": "Byte file → file.end",
+      "variant": "default"
+    },
+    {
+      "id": "m16",
+      "from": "netB",
+      "to": "disk",
+      "y": 555,
+      "label": "Kiểm SHA-256 và lưu",
+      "variant": "default"
+    },
+    {
+      "id": "m17",
+      "from": "netB",
+      "to": "netA",
+      "y": 583,
+      "label": "file.saved",
+      "variant": "return"
+    }
+  ],
+  "activations": [],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Tìm người",
+      "items": [
+        "Mỗi 3 giây, peer quảng bá cổng TCP và trạng thái.",
+        "Danh sách loại peer sau khoảng 10 giây mất heartbeat."
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Chat",
+      "items": [
+        "Ô soạn bật khi hai bên đồng ý trò chuyện.",
+        "ACK xác nhận ứng dụng bên kia đã tiếp nhận tin."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Truyền file",
+      "items": [
+        "Socket dữ liệu riêng cho phép chat trong lúc truyền.",
+        "File được kiểm tra SHA-256 trước khi công bố trong downloads/."
+      ]
+    }
+  ]
+}
