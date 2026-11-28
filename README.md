@@ -1,7 +1,7 @@
 # LAN Chat — UDP discovery và TCP chat
 
 Đã nối chat text vào backend và giao diện Tkinter (hỗ trợ **Light/Dark Mode**, tự căn giữa màn hình và đồng bộ viền cửa sổ Windows).  
-Hướng dẫn chi tiết: [docs/UI_CHAT.md](docs/UI_CHAT.md) · [docs/TCP_CHAT.md](docs/TCP_CHAT.md).
+Hướng dẫn chi tiết: [docs/UI_CHAT.md](docs/UI_CHAT.md) · [docs/TCP_CHAT.md](docs/TCP_CHAT.md) (tài liệu bản TCP cũ).
 
 ## Cách khởi động ứng dụng
 
@@ -12,12 +12,14 @@ Chạy từ thư mục gốc dự án (dùng `py` trên Windows, hoặc `python`
 py -B -m ui.app
 
 # 2. Hoặc chạy bản console (nhập username, tên hiển thị, chức danh bằng bàn phím)
+py -m pip install -r requirements.txt
 py -B main.py
 ```
 
 - **Giao diện (UI):** Mở 2 cửa sổ bằng `py -B -m ui.app` với 2 username khác nhau để thử trên cùng 1 máy (hoặc trên 2 máy cùng mạng LAN). Hỗ trợ nút chuyển **Chế độ tối / Chế độ sáng**, chọn trạng thái `online` / `away`, gửi **Mời trò chuyện** → **Đồng ý / Từ chối** rồi nhắn tin hai chiều.
-- **Console (`main.py`):** Nhập hồ sơ qua `input()`, chờ discovery rồi dùng các lệnh: `/list`, `/status online`, `/status away`, `/accept`, `/chat <username>`, `/quit`.
-- **Trạng thái hiện tại:** Chat cần hai peer cùng chạy trong mạng LAN; sự kiện `sent` ở UI xác nhận `sendall` hoàn tất (chưa có ACK từ ứng dụng nhận). Truyền file thật và lưu lịch sử xuống đĩa chưa được triển khai.
+- **Gửi file trong cửa sổ chat.** Sau khi hai bên đồng ý trò chuyện, bấm **Chọn file**. Xác nhận trong hộp chọn file sẽ gửi lời mời. Người nhận mở hội thoại và bấm **Đồng ý** hoặc **Từ chối**. Khi truyền xong, lịch sử hiển thị đường dẫn đã lưu. File nằm trong `downloads/` trên máy nhận, tính từ thư mục chạy ứng dụng.
+- **Terminal.** Dùng `/send "đường dẫn"` trong cuộc chat đang mở. Bên nhận dùng `/acceptfile <mã>` hoặc `/declinefile <mã>`. Gõ `/help` để xem toàn bộ lệnh.
+- Hai đầu cần bản có hỗ trợ giao thức truyền file. Mỗi file tối đa 100 MiB. Dữ liệu đi qua một kết nối TCP riêng nên hai bên vẫn có thể nhắn tin trong lúc truyền.
 
 ## Kiểm thử
 
@@ -47,7 +49,9 @@ network/
 └── tcp/
     ├── tcp_chat.py          # Kết nối, gửi/nhận UTF-8 newline và bản console
     ├── tcp_service.py       # Listener TCP lắng nghe kết nối đến
-    └── chat_session.py      # Quản lý lời mời, timeout và reader/writer cho UI
+    ├── chat_session.py      # Phiên chat và lời mời gửi file dùng chung cho UI/console
+    ├── framing.py           # Đọc/ghi header và payload điều khiển
+    └── file_transfer.py     # Truyền byte và kiểm tra SHA-256 trước khi lưu
 ui/
 ├── app.py                   # Cửa sổ chat Tkinter (ChatWindow) và cầu nối sự kiện mạng
 └── theme.py                 # Hệ thống màu Light/Dark Mode, ttk.Style, icon và viền Windows

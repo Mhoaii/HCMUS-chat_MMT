@@ -8,7 +8,8 @@ banner lời mời TCP và khung lịch sử tin nhắn. Toàn bộ màu sắc v
 import queue
 import threading
 import tkinter as tk
-from tkinter import ttk
+from pathlib import Path
+from tkinter import filedialog, ttk
 from tkinter.scrolledtext import ScrolledText
 
 from config import DEFAULT_STATUS, PORT_DEFAULT
@@ -16,6 +17,7 @@ from models.peer import LocalProfile, Peer
 from network.tcp.chat_session import ChatSessionService
 from network.tcp.tcp_service import TCPChatService
 from network.udp.discovery_service import DiscoveryService
+from ui.message_history import MessageHistory
 from ui.theme import (
     FONT_BODY,
     FONT_BODY_BOLD,
@@ -816,6 +818,7 @@ class ChatWindow:
         self.file_button = ttk.Button(
             composer,
             text="Chọn file",
+            command=self._choose_file,
             state="disabled",
             style="Secondary.TButton",
         )
@@ -868,7 +871,9 @@ class ChatWindow:
         self._peer_order: list[str] = []
         self._conversation_order: list[str] = []
 
-        self.chat_history: dict[str, list[tuple[str, str]]] = {}
+        self._history = MessageHistory()
+        self.chat_history = self._history.messages
+        self._file_offers: dict[str, dict[str, dict]] = {}
         self.unread_count: dict[str, int] = {}
         self._chat_states: dict[str, str] = {}
         self._chat_reasons: dict[str, str] = {}
@@ -1098,6 +1103,8 @@ class ChatWindow:
                 label += " · Lời mời"
             elif state in ("connecting", "waiting", "accepting"):
                 label += " · Đang chờ"
+            if offers := self._file_offers.get(username):
+                label += f" · {len(offers)} file chờ nhận"
             self.conversation_list.insert(tk.END, label)
 
         # Giữ nguyên dòng đang chọn sau khi vẽ lại danh sách.
@@ -1358,6 +1365,7 @@ class ChatWindow:
         self._events_poll_id = None
         if self._closing.is_set():
             return
+        refresh_history = False
         for _ in range(50):
             try:
                 event_type, username, data = self._network_events.get_nowait()
@@ -1368,6 +1376,10 @@ class ChatWindow:
                 self._remember_chat_peer(username, data)
                 self._chat_states[username] = data["state"]
                 self._chat_reasons[username] = data.get("reason", "")
+                if data["state"] in ("disconnected", "expired", "declined", "error"):
+                    self._file_offers.pop(username, None)
+                    self._history.interrupt_files(username)
+                    refresh_history |= username == self.current_chat
                 if data["state"] == "incoming":
                     name = self._peer_info[username]["display_name"]
                     self.connection_notice_var.set(
@@ -1402,11 +1414,17 @@ class ChatWindow:
                     f"{data.get('reason', '')}"
                 )
 
+            elif event_type.startswith("file_"):
+                self._handle_file_event(event_type, username, data)
+                refresh_history |= username == self.current_chat
+
             elif event_type == "network_error":
                 self.connection_notice_var.set(
                     f"Không thể nhận kết nối mới: {data['reason']}"
                 )
 
+        if refresh_history:
+            self._render_history()
         self._events_poll_id = self.root.after(
             100, self._drain_network_events,
         )
@@ -1430,7 +1448,16 @@ class ChatWindow:
         ready = state == "ready"
         self.message_entry.configure(state="normal" if ready else "disabled")
         self.send_button.configure(state="normal" if ready else "disabled")
+        self.file_button.configure(state="normal" if ready else "disabled")
         if ready:
+            offers = self._file_offers.get(username)
+            if offers:
+                offer = next(iter(offers.values()))
+                self.invitation_var.set(f"{username} muốn gửi {offer['name']} ({offer['size']:,} byte).")
+                self.invitation_frame.grid()
+                self.accept_button.pack(side="left")
+                self.decline_button.pack(side="left", padx=(8, 0))
+                return
             self.invitation_frame.grid_remove()
             return
         self.invitation_frame.grid()
@@ -1469,6 +1496,72 @@ class ChatWindow:
             if can_invite:
                 self.invite_button.pack(side="left")
 
+    def _choose_file(self) -> None:
+        """Chọn một file và gửi lời mời cho peer đang trò chuyện."""
+        username = self.current_chat
+        if self.chat_network is None or self._chat_states.get(username) != "ready":
+            return
+        choice = filedialog.askopenfilename(parent=self.root, title=f"Chọn file để gửi cho {username}")
+        if not choice or username != self.current_chat or self._closing.is_set():
+            return
+        try:
+            self.chat_network.offer_file(username, Path(choice), background=True)
+        except RuntimeError as error:
+            self.connection_notice_var.set(str(error))
+            return
+        self.connection_notice_var.set(f"Đang chuẩn bị {Path(choice).name} cho {username}…")
+
+    def _reply_file(self, accepted: bool) -> None:
+        """Trả lời lần gửi đang hiện trên thẻ hội thoại."""
+        username = self.current_chat
+        offers = self._file_offers.get(username)
+        if not offers or self.chat_network is None:
+            return
+        transfer_id = next(iter(offers))
+        try:
+            self.chat_network.reply_file(username, transfer_id, accepted)
+        except (ValueError, RuntimeError) as error:
+            self.connection_notice_var.set(str(error))
+            return
+        offer = offers.pop(transfer_id)
+        status = "Đang chờ dữ liệu" if accepted else "Bạn đã từ chối"
+        self._history.file_status(username, transfer_id, f"{offer['name']} · {status}", finished=not accepted)
+        self._render_history()
+        self._refresh_conversation_list()
+        self._update_chat_controls()
+
+    def _handle_file_event(self, kind: str, username: str, data: dict) -> None:
+        """Cập nhật thao tác và lịch sử file của peer trên luồng Tk."""
+        if kind == "file_prepare_error":
+            path = Path(data["path"])
+            self.connection_notice_var.set(f"{path.name} · {data['reason']}")
+            self._update_chat_controls()
+            return
+        name = data["name"]
+        finished = False
+        if kind == "file_offer":
+            self._file_offers.setdefault(username, {})[data["transfer_id"]] = data
+            status = "Chờ bạn trả lời"
+            self.connection_notice_var.set(f"{username} muốn gửi {name}.")
+            self._refresh_conversation_list()
+            self._update_chat_controls()
+        elif kind == "file_offered":
+            status = f"Chờ {username} trả lời"
+        elif kind == "file_reply":
+            finished = not data["accepted"]
+            status = "Đã từ chối" if finished else "Đã đồng ý nhận"
+        elif kind == "file_progress":
+            status = f"{data['percent']}%"
+        elif kind == "file_sent":
+            status, finished = f"100% · {username} đã lưu file", True
+        elif kind == "file_received":
+            status, finished = f"100% · Đã lưu tại {data['path']}", True
+        elif kind == "file_error":
+            status, finished = f"Lỗi: {data['reason']}", True
+        else:
+            return
+        self._history.file_status(username, data["transfer_id"], f"{name} · {status}", finished=finished)
+
     def _on_invite(self) -> None:
         """Gửi lời mời trò chuyện tới peer đang chọn qua endpoint từ DiscoveryService.
 
@@ -1504,7 +1597,10 @@ class ChatWindow:
             None
         """
         if self.current_chat is not None and self.chat_network is not None:
-            self.chat_network.accept_chat(self.current_chat)
+            if self._file_offers.get(self.current_chat) and self._chat_states.get(self.current_chat) == "ready":
+                self._reply_file(True)
+            else:
+                self.chat_network.accept_chat(self.current_chat)
 
     def _on_decline_chat(self) -> None:
         """Từ chối lời mời trò chuyện mà không xóa lịch sử hội thoại cũ.
@@ -1516,7 +1612,10 @@ class ChatWindow:
             None
         """
         if self.current_chat is not None and self.chat_network is not None:
-            self.chat_network.decline_chat(self.current_chat)
+            if self._file_offers.get(self.current_chat) and self._chat_states.get(self.current_chat) == "ready":
+                self._reply_file(False)
+            else:
+                self.chat_network.decline_chat(self.current_chat)
 
     def _on_send(self, event: tk.Event | None = None) -> str:
         """Gửi tin nhắn qua writer nền; chỉ ghi lịch sử khi nhận sự kiện `sent`.

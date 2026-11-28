@@ -12,6 +12,8 @@ python -B -m ui.app
 4. Phía nhận chọn mục **Lời mời** trong Cuộc chat gần đây, rồi **Đồng ý**
    hoặc **Từ chối**. Lời mời không tự đổi hội thoại đang mở.
 5. Khi đồng ý, hai bên nhập tin và bấm **Gửi** hoặc Enter.
+6. Để gửi file, bấm **Chọn file** và xác nhận file trong hộp thoại. Bên nhận mở đúng hội thoại, xem tên và dung lượng trên khung lời mời rồi bấm **Đồng ý** hoặc **Từ chối**.
+7. Khi nhận xong, lịch sử hiện `100% · Đã lưu tại ...`. File nằm trong `downloads/` của thư mục chạy ứng dụng trên máy nhận.
 
 Không cần bật TCP hay bấm accept kỹ thuật. Listener và vòng accept tự chạy
 khi bấm Bắt đầu. Một socket sau khi được đồng ý dùng cho cả hai chiều.
@@ -35,7 +37,7 @@ Tắt Hiện thông báo chỉ tắt thông báo presence, không giấu lời m
 
 ## Hợp đồng dữ liệu giữa hai UI
 
-Mỗi dòng TCP là một JSON UTF-8, được gửi bằng hàm `send_message` hiện có.
+Mỗi bản tin điều khiển gồm header 5 byte (1 byte loại, 4 byte độ dài theo thứ tự mạng) và payload JSON UTF-8. Trường `type` được khôi phục từ header khi đọc.
 Trường chung: `protocol="lan-chat-ui/1"`, `request_id`, `type`.
 
 | type | Trường bổ sung | Ý nghĩa |
@@ -43,7 +45,10 @@ Trường chung: `protocol="lan-chat-ui/1"`, `request_id`, `type`.
 | request | username, display_name, tcp_port, to | Mời đúng người nhận |
 | accept | username | Đồng ý lời mời |
 | decline | Không có | Từ chối rồi đóng socket |
-| message | text | Văn bản sau khi được đồng ý |
+| message | text, message_id | Văn bản sau khi được đồng ý |
+| ack | message_id | Ứng dụng đối phương đã tiếp nhận tin |
+| file.offer | transfer_id, name, size, sha256 | Mời nhận file |
+| file.reply | transfer_id, accepted | Trả lời lời mời |
 
 `request_id` là UUID hex, dùng để phân biệt phiên và loại sự kiện của socket cũ.
 Username người gửi được lấy từ lời mời, không đoán bằng IP hoặc cổng nguồn TCP.
@@ -54,11 +59,7 @@ JSON giúp nội dung như `ACCEPT`, dấu ngoặc hay newline được truyền
 tin nhắn. Tin nhắn tối đa 16.000 byte UTF-8. Các gói được gửi tuần tự bởi một
 writer; mỗi socket có đúng một reader.
 
-Hai UI phải cùng dùng giao thức này. Console cũ vẫn chạy riêng nhưng không
-thực hiện lời mời với UI. Hiện vẫn dùng framing newline; header type + length
-theo yêu cầu đồ án là phần cần thống nhất tiếp với người phụ trách TCP.
-Sự kiện `sent` chỉ xác nhận `sendall` hoàn tất, chưa có ACK từ ứng dụng nhận.
-Lịch sử nằm trong RAM. Nút Chọn file còn khóa, chưa có truyền file.
+UI và terminal dùng chung giao thức. Sau khi người nhận đồng ý, bên gửi mở socket dữ liệu riêng, gửi `file.open`, đúng số byte đã báo rồi gửi `file.end`. Bên nhận kiểm tra SHA-256, lưu file và trả `file.saved`. Lịch sử chat nằm trong RAM.
 
 ## Kiểm thử
 
